@@ -1,0 +1,4 @@
+name = "BplusApp"
+uuid = "6498524c-785b-4e26-b825-b7be109d6de7"
+authors = ["William Manning <manning.w27@gmail.com>"]
+version = "0.1.0"
