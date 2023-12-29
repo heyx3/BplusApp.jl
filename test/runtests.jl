@@ -1,8 +1,6 @@
-PROJECT_DIR = joinpath(@__DIR__, "..")
-
-# Make sure the test is always running in the same directory and within the same project.
+# Make sure the test is always running for *this* project.
 using Pkg
-cd(PROJECT_DIR)
+cd(joinpath(@__DIR__, ".."))
 Pkg.activate(".")
 
 using BplusCore; @using_bplus_core
@@ -46,5 +44,4 @@ const TEST_HEADER_EXTRA = quote
         end
     end
 end
-include_string(@__MODULE__, BplusCore.TEST_RUNNER_CODE,
-               joinpath(pathof(BplusCore), "..", "test_runner.jl"))
+include(BplusCore.TEST_RUNNER_PATH)
