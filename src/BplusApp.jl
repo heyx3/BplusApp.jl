@@ -19,11 +19,13 @@ include("basic_graphics_service.jl")
 include("game_loop.jl")
 
 
+# Helper macro to import all BplusApp stuff.
+const MODULES = tuple(:GL, :Input, :GUI, :ModernGLbp)
+const MODULES_USING_STATEMENTS = [:( using BplusApp.$m ) for m in MODULES]
+
 "Imports all App B+ modules"
 macro using_bplus_app()
-    return quote
-        using BplusApp, BplusApp.GL, BplusApp.Input, BplusApp.GUI, BplusApp.ModernGLbp
-    end
+    return quote $(MODULES_USING_STATEMENTS...) end
 end
 export @using_bplus_app
 

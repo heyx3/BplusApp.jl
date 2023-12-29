@@ -19,9 +19,12 @@ const TEST_HEADER_EXTRA = quote
     using JSON3, CSyntax, StructTypes
     using CImGui, GLFW
 
-    using BplusApp
-    using BplusApp.GL, BplusApp.Input, BplusApp.GUI
-    using BplusApp.ModernGLbp
+    # Sadly, the macros to auto-import B+ do not work right in here.
+    using BplusCore, BplusApp
+    for use in (BplusCore.MODULES_USING_STATEMENTS...,
+                BplusApp.MODULES_USING_STATEMENTS...)
+        eval(use)
+    end
 
     "Checks for OpenGL error messages, and prints less-severe messages"
     function check_gl_logs(context::String)
