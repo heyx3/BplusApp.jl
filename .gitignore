@@ -100,10 +100,13 @@ Build
 # Other/test files
 **/*.pgm
 
-#IMGUI local configuration
+# IMGUI local configuration
 imgui.ini
 # B+ app configuration
 **/Config.toml
 **/Manifest.toml
 .vs/
 .vscode/
+
+# Allow editing ModernGL fork sort of like a submodule
+src/ModernGL_fork/.git

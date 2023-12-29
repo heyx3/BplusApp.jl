@@ -4,7 +4,7 @@ module BplusApp
 using BplusCore
 @using_bplus_core
 
-include("ModernGL_fork/ModernGLbp.jl")
+include("ModernGL_fork/src/ModernGLbp.jl")
 
 include("GL/GL.jl")
 export GL
@@ -22,8 +22,7 @@ include("game_loop.jl")
 "Imports all App B+ modules"
 macro using_bplus_app()
     return quote
-        using BplusCore; @using_bplus_core
-        using BplusApp, BplusApp.GL, BplusApp.Input, BplusApp.GUI
+        using BplusApp, BplusApp.GL, BplusApp.Input, BplusApp.GUI, BplusApp.ModernGLbp
     end
 end
 export @using_bplus_app
