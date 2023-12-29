@@ -21,7 +21,10 @@ include("game_loop.jl")
 
 "Imports all App B+ modules"
 macro using_bplus_app()
-    return :( using BplusApp, BplusApp.GL, BplusApp.Input, BplusApp.GUI )
+    return quote
+        using BplusCore; @using_bplus_core
+        using BplusApp, BplusApp.GL, BplusApp.Input, BplusApp.GUI
+    end
 end
 export @using_bplus_app
 
