@@ -13,10 +13,15 @@ export Input
 include("GUI/GUI.jl")
 export GUI
 
+# Extras built on top of the main three modules
+using .GL, .Input, .GUI
+include("basic_graphics_service.jl")
+include("game_loop.jl")
+
 
 "Imports all App B+ modules"
 macro using_bplus_app()
-    return :( using BplusApp.GL, BplusApp.Input, BplusApp.GUI )
+    return :( using BplusApp, BplusApp.GL, BplusApp.Input, BplusApp.GUI )
 end
 export @using_bplus_app
 
