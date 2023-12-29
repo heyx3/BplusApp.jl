@@ -1,3 +1,5 @@
+using GLFW
+
 "The game loop's state and parameters"
 Base.@kwdef mutable struct GameLoop
     # Game stuff:
@@ -119,14 +121,14 @@ macro game_loop(block)
         # Run the loop.
         $(esc(setup_code))
         while true
-            GLFW.PollEvents()
+           $GLFW.PollEvents()
 
             # Update/render.
             service_Input_update()
             service_GUI_start_frame()
             $(esc(loop_code))
             service_GUI_end_frame()
-            GLFW.SwapBuffers($loop_var.context.window)
+            $GLFW.SwapBuffers($loop_var.context.window)
 
             # Advance the timer.
             $loop_var.frame_idx += 1
