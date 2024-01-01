@@ -3,7 +3,7 @@ module GUI
 
 # External dependencies
 using Dates, Setfield
-using CImGui, GLFW, CSyntax, StructTypes
+using CImGui, LibCImGui, GLFW, CSyntax, StructTypes
 
 # B+ dependencies
 using BplusCore; @using_bplus_core

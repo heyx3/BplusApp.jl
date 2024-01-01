@@ -55,6 +55,22 @@ function gui_with_padding(to_do, padding...)
     end
 end
 
+function gui_with_clip_rect(to_do,
+                            rect::Box2Df, intersect_with_current_rect::Bool,
+                            draw_list::Optional{Ptr{LibCImGui.ImDrawList}} = nothing
+                            #TODO: Param for using world space (call different CImGui func)
+                            )
+    CImGui.PushClipRect(@optional(exists(draw_list), draw_list),
+                        CImGui.ImVec2(min_inclusive(rect)...),
+                        CImGui.ImVec2(max_exclusive(rect)...),
+                        intersect_with_current_rect)
+    try
+        return to_do()
+    finally
+        CImGui.PopClipRect()
+    end
+end
+
 function gui_with_font(to_do, font::Ptr)
     CImGui.PushFont(font)
     try
@@ -146,8 +162,8 @@ function gui_within_child_window(to_do, size, flags=0)::Optional
     return nothing
 end
 
-export gui_with_item_width, gui_with_indentation, gui_with_unescaped_tabbing, gui_with_padding,
-       gui_with_style_color, gui_with_font, gui_with_nested_id,
+export gui_with_item_width, gui_with_indentation, gui_with_clip_rect, gui_with_padding,
+       gui_with_unescaped_tabbing, gui_with_style_color, gui_with_font, gui_with_nested_id,
        gui_window, gui_within_fold, gui_within_group, gui_within_child_window
 #
 
