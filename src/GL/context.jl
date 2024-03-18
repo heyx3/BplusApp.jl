@@ -122,6 +122,7 @@ mutable struct Context
     vsync::E_VsyncModes
     device::Device
     debug_mode::Bool
+    supported_extensions::Vector{ExtensionRequest}
 
     state::RenderState
 
@@ -146,6 +147,7 @@ mutable struct Context
 
     function Context( size::v2i, title::String
                       ;
+                      extensions::Vector{ExtensionRequest} = collect(OGL_RECOMMENDED_EXTENSIONS),
                       vsync::E_VsyncModes = VsyncModes.off,
                       debug_mode::Bool = false, # See GL/debugging.jl
                       glfw_hints::Dict = Dict{Int32, Int32}(),
@@ -190,18 +192,21 @@ mutable struct Context
 
         # Set up the Context singleton.
         @bp_check(isnothing(get_context()), "A Context already exists on this thread")
-        con::Context = new(window, vsync, device, debug_mode, RenderState(),
-                           Ptr_Program(), Ptr_Mesh(),
-                           fill((Ptr_Buffer(), Interval{Int}(min=-1, max=-1)),
-                                device.n_uniform_block_slots),
-                           fill((Ptr_Buffer(), Interval{Int}(min=-1, max=-1)),
-                                device.n_storage_block_slots),
-                           Vector{Base.Callable}(), Vector{Base.Callable}(),
-                           Vector{Base.Callable}(), Vector{Base.Callable}(),
-                           Vector{Base.Callable}(), Vector{Base.Callable}(),
-                           Vector{Base.Callable}(),
-                           Set{AbstractService}(),
-                           Dict{Type{<:AbstractService}, AbstractService}())
+        con::Context = new(
+            window, vsync, device, debug_mode, [ ],
+            RenderState(),
+            Ptr_Program(), Ptr_Mesh(),
+            fill((Ptr_Buffer(), Interval{Int}(min=-1, max=-1)),
+                 device.n_uniform_block_slots),
+            fill((Ptr_Buffer(), Interval{Int}(min=-1, max=-1)),
+                 device.n_storage_block_slots),
+            Vector{Base.Callable}(), Vector{Base.Callable}(),
+            Vector{Base.Callable}(), Vector{Base.Callable}(),
+            Vector{Base.Callable}(), Vector{Base.Callable}(),
+            Vector{Base.Callable}(),
+            Set{AbstractService}(),
+            Dict{Type{<:AbstractService}, AbstractService}()
+        )
         CONTEXTS_PER_THREAD[Threads.threadid()] = con
 
         # Hook GLFW callbacks so that multiple independent sources can subscribe to these events.
@@ -254,13 +259,27 @@ mutable struct Context
             # glDebugMessageCallback(ON_OGL_MSG_ptr, C_NULL)
         end
 
-        # Check whether our required extensions are provided.
-        for ext in OGL_REQUIRED_EXTENSIONS
-            @bp_check(GLFW.ExtensionSupported(ext),
-                      "Required OpenGL extension not supported: ", ext,
-                        ". If you're on a laptop with a discrete GPU, make sure you're not accidentally",
-                        " using the Integrated Graphics. This program was using the GPU '",
-                        unsafe_string(ModernGLbp.glGetString(GL_RENDERER)), "'.")
+        # Check for the requested extensions.
+        for ext in extensions
+            if GLFW.ExtensionSupported(ext.name)
+                push!(con.supported_extensions, ext)
+            else
+                error_msg = string(
+                    "OpenGL extension not supported: ", ext.name,
+                    ". If you're on a laptop with a discrete GPU, make sure you're not accidentally",
+                    " using the Integrated Graphics. This program was using the GPU '",
+                    unsafe_string(ModernGLbp.glGetString(GL_RENDERER)), "'."
+                )
+                if ext.mode == ExtensionMode.require
+                    error(error_msg)
+                elseif ext.mode == ExtensionMode.prefer
+                    @warn error_msg
+                elseif ext.mode == ExtensionMode.enable
+                    @info error_msg
+                else
+                    error("Unhandled case: ", ext.mode)
+                end
+            end
         end
 
         # Set up the OpenGL/window state.
@@ -327,21 +346,7 @@ The reason is that Julia tasks can get shifted to different threads
 
     task.sticky = true
     schedule(task)
-    # If the task throws, unwrap the TaskFailedException for convenience.
-    try
-        return fetch(task)
-    catch e
-        if e isa TaskFailedException
-            # Unwrap the exception.
-            @bp_check(task.result isa Exception,
-                      "TaskException's inner exception isn't actually an exception??")
-            throw(task.result)  # If you see this line show up in an error's stacktrace,
-                                #    it's a red herring. Look further down in the printout
-                                #    to the *third* stacktrace.
-        else
-            rethrow()
-        end
-    end
+    return fetch(task)
 end
 export bp_gl_context
 
@@ -357,6 +362,10 @@ function get_window_size(window::GLFW.Window)::v2i
     return v2i(window_size_data.width, window_size_data.height)
 end
 export get_window_size
+
+"Checks whether the given extension (e.x. `GL_ARB_bindless_texture`) is supported in the Context"
+extension_supported(name::String, context::Context = get_context()) = any(e.name == name for e in context.supported_extensions)
+export extension_supported
 
 "
 You can call this after some external tool messes with OpenGL state,

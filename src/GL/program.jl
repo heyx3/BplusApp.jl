@@ -149,8 +149,9 @@ Returns the program's handle, or an error message.
 function compile_stage( name::String,
                         type::GLenum,
                         source::String
+                        ; extensions::Vector{ExtensionRequest} = get_context().supported_extensions
                       )::Union{GLuint, String}
-    source = string(GLSL_HEADER, "\n", source)
+    source = string(glsl_header(extensions), "\n", source)
     handle::GLuint = glCreateShader(type)
 
     # The OpenGL call wants an array of strings, a.k.a. a pointer to a pointer to a string.
@@ -225,6 +226,7 @@ Also optionally updates the compiler 'cached_binary' field to contain
 "
 function compile_program( p::ProgramCompiler,
                           update_cache::Bool = false
+                          ; extensions::Vector{ExtensionRequest} = get_context().supported_extensions
                         )::Union{Ptr_Program, String}
     @bp_check(exists(get_context()), "Can't create a Program outside a BplusApp.GL.Context")
 
@@ -248,7 +250,7 @@ function compile_program( p::ProgramCompiler,
                     ("fragment", GL_FRAGMENT_SHADER, p.source.src_fragment),
                     ("geometry", GL_GEOMETRY_SHADER, p.source.src_geometry))
             if exists(data[3])
-                result = compile_stage(data...)
+                result = compile_stage(data...; extensions=extensions)
                 if result isa String
                     # Clean up the shaders/program, then return the error message.
                     map(glDeleteShader, compiled_handles)
@@ -260,7 +262,7 @@ function compile_program( p::ProgramCompiler,
             end
         end
     elseif p.source isa ComputeProgramSource
-        result = compile_stage("compute", GL_COMPUTE_SHADER, p.source.src)
+        result = compile_stage("compute", GL_COMPUTE_SHADER, p.source.src; extensions=extensions)
         if result isa String
             # Clean up the shaders/program, then return the error message.
             map(glDeleteShader, compiled_handles)
@@ -339,9 +341,10 @@ end
 function Program(vert_shader::String, frag_shader::String
                  ;
                  geom_shader::Optional{String} = nothing,
-                 flexible_mode::Bool = true)
+                 flexible_mode::Bool = true,
+                 extensions::Vector{ExtensionRequest} = get_context().supported_extensions)
     compiler = ProgramCompiler(vert_shader, frag_shader; src_geometry = geom_shader)
-    result = compile_program(compiler)
+    result = compile_program(compiler; extensions=extensions)
     if result isa Ptr_Program
         return Program(result, flexible_mode)
     elseif result isa String
@@ -352,9 +355,10 @@ function Program(vert_shader::String, frag_shader::String
 end
 function Program(compute_shader::String
                  ;
-                 flexible_mode::Bool = true)
+                 flexible_mode::Bool = true,
+                 extensions::Vector{ExtensionRequest} = get_context().supported_extensions)
     compiler = ProgramCompiler(compute_shader)
-    result = compile_program(compiler)
+    result = compile_program(compiler; extensions=extensions)
     if result isa Ptr_Program
         return Program(result, flexible_mode; is_compute=true)
     elseif result isa String
