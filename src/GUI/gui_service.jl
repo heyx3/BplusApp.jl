@@ -577,10 +577,15 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
         # Just check a few different textures every frame.
         for _ in 1:3
             if haskey(serv.user_textures_by_handle, serv.next_tex_handle_to_prune)
-                tex_to_prune = serv.user_textures_by_handle[serv.next_tex_handle_to_prune]
+                entry_to_prune = serv.user_textures_by_handle[serv.next_tex_handle_to_prune]
+                tex_to_prune::Texture = if entry_to_prune isa View
+                    entry_to_prune.owner
+                else
+                    entry_to_prune
+                end
                 if is_destroyed(tex_to_prune)
                     delete!(serv.user_textures_by_handle, serv.next_tex_handle_to_prune)
-                    delete!(serv.user_texture_handles, tex_to_prune)
+                    delete!(serv.user_texture_handles, entry_to_prune)
                 end
             end
             serv.next_tex_handle_to_prune = CImGui.ImTextureID(

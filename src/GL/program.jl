@@ -888,7 +888,8 @@ macro bp_glsl_str(src::AbstractString)
 end
 "
 Compiles a string with special formatting into a `Program`.
-For info on how to format it, refer to the docs for the macro version, `@bp_glsl_str`.
+For info on how to format it, refer to the docs for `@bp_glsl_str`
+  (the string macro version).
 "
 function bp_glsl_str(src::AbstractString, ::Val{GenerateCode} = Val(false)) where {GenerateCode}
     # Define info about the different pieces of the shader.

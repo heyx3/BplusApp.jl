@@ -145,6 +145,44 @@ function gui_within_group(to_do)
     end
 end
 
+"""
+Defines a set of tabs, and the contents underneath each.
+Within this block you can create new tab views as follows:
+
+````
+gui_tab_views("Tab1") do
+    # GUI code for the tab's contents
+end
+gui_tab_views("Tab2") do
+    # GUI code for the other tab's contents
+end
+````
+"""
+function gui_tab_views(to_do, label, flags = CImGui.LibCImGui.ImGuiTabBarFlags_None)
+    if CImGui.BeginTabBar(label, flags)
+        try
+            return to_do()
+        finally
+            CImGui.EndTabBar()
+        end
+    else
+        return nothing
+    end
+end
+"Defines one tab, as part of a tab bar (see `gui_tab_views()`). Returns whether the tab view was open."
+function gui_tab_item(to_do, label, flags = CImGui.LibCImGui.ImGuiTabItemFlags_None)
+    if CImGui.BeginTabItem(label, C_NULL, flags)
+        try
+            to_do()
+            return true
+        finally
+            CImGui.EndTabItem()
+        end
+    else
+        return false
+    end
+end
+
 "
 Groups a GUI together into a smaller window.
 Returns the output of 'to_do()', or `nothing` if the window is closed.
@@ -164,7 +202,7 @@ end
 
 export gui_with_item_width, gui_with_indentation, gui_with_clip_rect, gui_with_padding,
        gui_with_unescaped_tabbing, gui_with_style_color, gui_with_font, gui_with_nested_id,
-       gui_window, gui_within_fold, gui_within_group, gui_within_child_window
+       gui_window, gui_within_fold, gui_within_group, gui_tab_views, gui_tab_item, gui_within_child_window
 #
 
 
