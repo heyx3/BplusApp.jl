@@ -5,6 +5,9 @@
   * `gui_tab_item()`
 * Add `convert_pixel()` to translate `ImageIO` data into B+ terms
 * Fix bug when using `View` instead of `Texture` in CImGui/GuiService
+* Allow getting the handle of a `View` with `get_ogl_handle(v)`
+* Catch more user errors:
+  * Trying to make a `@std140` or `@std430` struct mutable
 
 # v0.1.1
 

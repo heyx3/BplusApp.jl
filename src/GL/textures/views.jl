@@ -61,6 +61,8 @@ function view_deactivate(view::View)
     end
 end
 
+get_ogl_handle(view::View) = view.handle
+
 # Unfortunately, OpenGL allows implementations to re-use the handles of destroyed views;
 #    otherwise, I'd use that for hashing/equality.
 

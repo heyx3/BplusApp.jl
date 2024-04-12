@@ -724,6 +724,8 @@ end
 function block_struct_impl(struct_expr, mode::Symbol, invoking_module::Module)
     if !Base.is_expr(struct_expr, :struct)
         error("Expected struct block, got: ", struct_expr)
+    elseif struct_expr.args[1]
+        error("UBO struct cannot be mutable; wrap it in a Ref if you want that!")
     end
 
     mode_switch(std140, std430) = if mode == :std140
