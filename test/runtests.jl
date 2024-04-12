@@ -13,7 +13,7 @@ BplusApp.GUI.bp_gui_asserts_enabled() = true
 
 # Execute the tests.
 const TEST_HEADER_EXTRA = quote
-    using Dates, Setfield, InteractiveUtils
+    using Dates, Random, Setfield, InteractiveUtils
     using JSON3, CSyntax, StructTypes
     using CImGui, GLFW
 
