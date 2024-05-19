@@ -44,7 +44,7 @@ let sprinted = sprint(show, A(1.4f0, true, v4f(4.4, 5.5, 6.6, 7.7)))
     @bp_check(sprinted == "A($(sprint(show, 1.4f0)), true, $(sprint(show, v4f(4.4, 5.5, 6.6, 7.7))))",
               "Actual value: ", sprint(show, A(1.4f0, true, v4f(4.4, 5.5, 6.6, 7.7))), "\n")
 end
-@bp_test_no_allocations(BplusApp.GL.base_alignment(A), 16)
+@bp_test_no_allocations(BplusApp.GL.block_alignment(A), 16)
 
 
 @std140 struct B
@@ -120,7 +120,7 @@ check_B_field(:m, fmat4, 32)
 check_B_field(:d, dmat3x2, 112)
 check_B_field(:bs, NTuple{6, Bool}, 160)
 check_B_field(:backup_as, NTuple{10, A}, 256)
-@bp_test_no_allocations(BplusApp.GL.base_alignment(B), 16)
+@bp_test_no_allocations(BplusApp.GL.block_alignment(B), 16)
 
 
 @std140 struct C
@@ -207,4 +207,4 @@ check_C_field(:b, B, 16)
 check_C_field(:f1, Float32, 592)
 check_C_field(:array1, NTuple{10, Vec{2, Bool}}, 608)
 check_C_field(:array2, NTuple{5, fmat3x2}, 768)
-@bp_test_no_allocations(BplusApp.GL.base_alignment(C), 16)
+@bp_test_no_allocations(BplusApp.GL.block_alignment(C), 16)

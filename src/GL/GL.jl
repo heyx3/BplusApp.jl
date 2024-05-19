@@ -27,6 +27,7 @@ include("context.jl")
 include("resource.jl")
 
 include("buffers/buffer.jl")
+include("buffers/layout_macros.jl")
 include("buffers/vertices.jl")
 include("buffers/mesh.jl")
 
