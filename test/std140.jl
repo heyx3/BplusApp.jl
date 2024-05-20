@@ -1,50 +1,56 @@
-#TODO: Test BplusApp.GL.glsl_decl() in both std140 and std430
+# BplusApp.GL.BUFFER_LAYOUT_MACRO_DEBUG_STREAM = stdout
 
 @std140 struct A
-    f::Float32
-    b::Bool
-    v::v4f
+    f::Float32 # 1-4
+    b::Bool # 5-8
+    vf::v3f # 17 - 28
+    i::Int32 # 29 - 32
+    vi::v2i # 33 - 40
+    # Pad 41-48
+    bs::NTuple{25, Bool} # 49 = 148
+    # Struct alignment: 16
 end
 
 # For debugging, make a very clear print() for A.
 function Base.print(io::IO, a::A; indentation="")
     println(io, "A(")
-        println(io, indentation, "\tf = ", a.f)
-        println(io, indentation, "\tb = ", a.b)
-        println(io, indentation, "\tv = ", a.v)
+        println(io, indentation, "\tf  = ", a.f)
+        println(io, indentation, "\tb  = ", a.b)
+        println(io, indentation, "\tvf = ", a.vf)
+        println(io, indentation, "\ti  = ", a.i)
+        println(io, indentation, "\tvi = ", a.vi)
+        println(io, indentation, "\tbs = ...")
     print(io, indentation, ")")
 end
 
 # Test struct A:
-@bp_test_no_allocations(sizeof(A),
-                        32,
-                        "Struct 'A' in std140 layout should be 32 bytes but it's ",
-                          sizeof(A))
-@bp_test_no_allocations(propertynames(A), (:f, :b, :v))
-@bp_test_no_allocations(BplusApp.GL.property_types(A), (Float32, Bool, v4f))
-@bp_test_no_allocations(typeof(A(1.4f0, true, v4f(4.4, 5.5, 6.6, 7.7))),
-                        A)
-@bp_test_no_allocations(getproperty.(Ref(A(1.4f0, true, v4f(4.4, 5.5, 6.6, 7.7))),
-                                     propertynames(A)),
-                        (1.4f0, true, v4f(4.4, 5.5, 6.6, 7.7)))
-function check_A_field(name::Symbol, type::Type, offset::Int)
-    @bp_test_no_allocations(BplusApp.GL.property_type(name), type)
-    @bp_test_no_allocations(BplusApp.GL.property_offset(name), offset)
+@bp_test_no_allocations(block_byte_size(A),
+                        148,
+                        "Struct 'A' in std140 layout is ", block_byte_size(A), " bytes")
+@bp_test_no_allocations(propertynames(A), (:f, :b, :vf, :i, :vi, :bs))
+@bp_test_no_allocations(block_property_types(A), (Float32, Bool, v3f, Int32, v2i, NTuple{25, Bool}))
+a1_args() = (@f32(1.4), true, v3f(4.4, 5.5, 6.6), 4, v2i(-3, -200), ntuple(i -> (i%3)==0, Val(25)))
+make_a_1() = A(a1_args()...)
+@bp_test_no_allocations(typeof(make_a_1()), A{Vector{UInt8}})
+@bp_test_no_allocations(getproperty.(Ref(make_a_1()), propertynames(A)),
+                        a1_args())
+function check_A_field(name::Symbol, type::Type, first_byte::Int)
+    @bp_test_no_allocations(block_property_type(A, Val(name)), type, "Type of A's field '$name'")
+    @bp_test_no_allocations(BplusApp.GL.block_property_first_byte(A, Val(name)), first_byte,
+                            "First byte of A's field '$name'")
 end
-@bp_test_no_allocations(BplusApp.GL.property_offset(A, :f), 0,
-                        "Expected 0, got ", BplusApp.GL.property_offset(A, :f))
-@bp_test_no_allocations(BplusApp.GL.property_type(A, :f), Float32)
-@bp_test_no_allocations(BplusApp.GL.property_offset(A, :b), 4,
-                        "Expected 4, got ", BplusApp.GL.property_offset(A, :b))
-@bp_test_no_allocations(BplusApp.GL.property_type(A, :b), Bool)
-@bp_test_no_allocations(BplusApp.GL.property_offset(A, :v), 16,
-                        "Expected 16, got ", BplusApp.GL.property_offset(A, :v))
-@bp_test_no_allocations(BplusApp.GL.property_type(A, :v), v4f)
-let sprinted = sprint(show, A(1.4f0, true, v4f(4.4, 5.5, 6.6, 7.7)))
-    @bp_check(sprinted == "A($(sprint(show, 1.4f0)), true, $(sprint(show, v4f(4.4, 5.5, 6.6, 7.7))))",
-              "Actual value: ", sprint(show, A(1.4f0, true, v4f(4.4, 5.5, 6.6, 7.7))), "\n")
+check_A_field(:f, Float32, 1)
+check_A_field(:b, Bool, 5)
+check_A_field(:vf, v3f, 17)
+check_A_field(:i, Int32, 29)
+check_A_field(:vi, v2i, 33)
+check_A_field(:bs, NTuple{25, Bool}, 49)
+let sprinted = sprint(show, make_a_1()),
+    sprinted_args = sprint.(Ref(show), a1_args())
+  @bp_check(sprinted == "A($(join(sprinted_args, ", ")))",
+            "Actual value: ", sprinted, "\n")
 end
-@bp_test_no_allocations(BplusApp.GL.block_alignment(A), 16)
+@bp_test_no_allocations(block_alignment(A), 16)
 
 
 @std140 struct B
@@ -208,3 +214,5 @@ check_C_field(:f1, Float32, 592)
 check_C_field(:array1, NTuple{10, Vec{2, Bool}}, 608)
 check_C_field(:array2, NTuple{5, fmat3x2}, 768)
 @bp_test_no_allocations(BplusApp.GL.block_alignment(C), 16)
+
+#TODO: Test BplusApp.GL.glsl_decl() in both std140 and std430

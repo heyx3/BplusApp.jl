@@ -111,7 +111,6 @@ function set_buffer_data( b::Buffer,
                           # A byte offset, to be combined wth 'dest_element_offset'
                           dest_byte_offset::UInt = zero(UInt)
                         )
-    @bp_check(b.is_mutable_from_cpu, "Buffer is immutable")
     @bp_check(max_inclusive(src_element_range) <= contiguous_length(new_elements, T),
               "Trying to upload a range of data beyond the input buffer")
 
@@ -124,26 +123,30 @@ function set_buffer_data( b::Buffer,
                  ", when there's only ", b.byte_size, " bytes")
 
     if byte_size >= 1
-        ptr = contiguous_ref(new_elements, T, Int(min_inclusive(src_element_range)))
-        glNamedBufferSubData(b.handle, first_byte, byte_size, ptr)
+        ref = contiguous_ref(new_elements, T, Int(min_inclusive(src_element_range)))
+        set_buffer_bytes(b, ref, byte_size; first_byte=first_byte)
     end
+end
+function set_buffer_bytes(b::Buffer, data::Ref, n_bytes::Integer;
+                          first_byte::UInt = one(UInt))
+    @bp_check(b.is_mutable_from_cpu, "Buffer is immutable")
+    glNamedBufferSubData(b.handle, first_byte, n_bytes, data)
 end
 
 "
 Loads the buffer's data into the given array.
-If given a type instead of an array,
-   then a new array of that type is allocated and returned.
+You may instead pass a type, and this function will create and return an array of it for you.
 Note that counts are per-element, not per-byte.
 "
 function get_buffer_data( b::Buffer,
                           # The array which will contain the results,
                           #    or the type of the new array to make
-                          output::Union{Vector{T}, Type{T}} = UInt8
+                          output::Union{AbstractVector{T}, Type{T}} = UInt8
                           ;
                           # Shifts the first element to write to in the output array
-                          dest_offset::Integer = zero(UInt),
+                          dest_offset::UInt = zero(UInt),
                           # The start of the buffer's array data
-                          src_byte_offset::Integer = zero(UInt),
+                          src_byte_offset::UInt = zero(UInt),
                           # The elements to read from the buffer (defaults to as much as possible)
                           src_elements::IntervalU = IntervalU(
                               min=1,
@@ -156,18 +159,18 @@ function get_buffer_data( b::Buffer,
     src_first_byte::UInt = convert(UInt, src_byte_offset + ((min_inclusive(src_elements) - 1) * sizeof(T)))
     n_bytes::UInt = convert(UInt, size(src_elements) * sizeof(T))
 
-    if output isa Vector{T}
+    if output isa AbstractVector{T}
         @bp_check(dest_offset + size(src_elements) <= length(output),
                   "Trying to read Buffer into an array, but the array isn't big enough.",
                     " Trying to write to elements ", (dest_offset + 1),
                     " - ", (dest_offset + size(src_elements)), ", but there are only ",
                     length(output))
     else
-        @bp_check(dest_offset == 0x0,
+        @bp_check(iszero(dest_offset),
                   "In 'get_buffer_data()', you provided 'dest_offset' of ", dest_offset,
                      " but no output array")
     end
-    output_array::Vector{T} = (output isa Vector{T}) ?
+    output_array::Vector{T} = (output isa AbstractVector{T}) ?
                                   output :
                                   Vector{T}(undef, size(src_elements))
 
@@ -175,7 +178,7 @@ function get_buffer_data( b::Buffer,
 
     glGetNamedBufferSubData(b.handle, src_first_byte, n_bytes, output_ptr)
 
-    if !(output isa Vector{T})
+    if !(output isa AbstractVector{T})
         return output_array
     else
         return nothing
@@ -207,4 +210,5 @@ function copy_buffer( src::Buffer, dest::Buffer
                              byte_size)
 end
 
-export set_buffer_data, get_buffer_data, copy_buffer
+export set_buffer_data, set_buffer_bytes,
+       get_buffer_data, copy_buffer

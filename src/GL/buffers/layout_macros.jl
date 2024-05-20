@@ -12,6 +12,9 @@ To pass it into a C function, wrap it with a `Ref()` call.
 To create an array of your block type `T`, construct `BlockArray` with either
     `BlockArray{T}(bytes::AbstractVector{UInt8})` or
     `BlockArray{T}(count::Int)`.
+
+For simplicity, the buffer's bytes will always be filled with 0xAA by default,
+    and the `==` operator is defined to do fast bytewise comparison.
 "
 abstract type AbstractOglBlock end
 abstract type OglBlock_std140 <: AbstractOglBlock end
@@ -34,27 +37,35 @@ block_byte_size(x::AbstractOglBlock) = block_byte_size(typeof(x))
 block_byte_size(T::Type{<:AbstractOglBlock}) = error("Not implemented: ", T)
 
 "Gets the amount of padding in the given struct, in bytes"
-padding_size(b::AbstractOglBlock) = padding_size(typeof(b))
-padding_size(T::Type{<:AbstractOglBlock}) = error("Not implemented: ", T)
+block_padding_size(b::AbstractOglBlock) = block_padding_size(typeof(b))
+block_padding_size(T::Type{<:AbstractOglBlock}) = error("Not implemented: ", T)
 
 block_alignment(b::AbstractOglBlock) = block_alignment(typeof(b))
 block_alignment(T::Type{<:AbstractOglBlock}) = error("Not implemented: ", T)
 
+const BUFFER_FIELD_NAME = Symbol("raw byte buffer")
 "Gets the bytes of a block, as a mutable array of `UInt8`"
-block_byte_array(b::AbstractOglBlock)::AbstractVector{UInt8} = getfield(b, :buffer)
+block_byte_array(b::AbstractOglBlock)::AbstractVector{UInt8} = getfield(b, BUFFER_FIELD_NAME)
 
-"Returns the type of a property"
-@inline property_type(b::AbstractOglBlock, name::Symbol) = property_type(typeof(b), Val(name))
-@inline property_type(T::Type{<:AbstractOglBlock}, name::Symbol) = property_type(T, Val(name))
-@inline property_type(T::Type{<:AbstractOglBlock}, Name::Val) = error(T, " has no property '", val_type(Name))
+"
+Returns the type of an `AbstractOglBlock`'s property.
 
-property_types(b::AbstractOglBlock) = property_types(typeof(b))
-property_types(T::Type{<:AbstractOglBlock}) = error(T, " didn't implement ", property_types)
+NOTE: Static array properties will return `NTuple{N, T}` here,
+  but the actual type of those properties is `BlockArray{T}`.
+This is different from the behavior of `block_property_types()`.
+"
+@inline block_property_type(b::AbstractOglBlock, name::Symbol) = block_property_type(typeof(b), Val(name))
+@inline block_property_type(T::Type{<:AbstractOglBlock}, name::Symbol) = block_property_type(T, Val(name))
+@inline block_property_type(T::Type{<:AbstractOglBlock}, Name::Val) = error(T, " has no property '", val_type(Name))
 
-"Returns the byte offset to a property"
-@inline property_offset(b::AbstractOglBlock, name::Symbol) = property_offset(typeof(b), name)
-@inline property_offset(T::Type{<:AbstractOglBlock}, name::Symbol) = property_offset(T, Val(name))
-@inline property_offset(T::Type{<:AbstractOglBlock}, Name::Val) = error(T, " has no property '", val_type(Name), "'")
+"
+Returns a tuple of the type for each named property from `Base.propertynames`.
+
+NOTE: Unlike `block_property_type()`, this function returns the true type of static arrays
+    (`BlockArray{T}`, not `NTuple{N, T}`).
+"
+block_property_types(b::AbstractOglBlock) = block_property_types(typeof(b))
+block_property_types(T::Type{<:AbstractOglBlock}) = error(T, " didn't implement ", block_property_types)
 
 
 "Parameters for a declaration of an OpenGL block"
@@ -96,6 +107,31 @@ glsl_decl(T::Type{<:AbstractOglBlock}, params::GLSLBlockDecl = GLSLBlockDecl()) 
     } $(exists(params.glsl_name) ? params.glsl_name : "") ;"
 end
 
+
+#  Internals:  #
+
+# Provide simplified overloads of `set_buffer_data()` and `get_buffer_data()` for block structs.
+"Sets a buffer with a uniform block's data"
+set_buffer_data(buf::Buffer, block::AbstractOglBlock, first_byte::Integer=1) = set_buffer_bytes(
+    buf, Ref(block), block_byte_size(block);
+    first_byte = UInt(first_byte)
+)
+"Retrieves a buffer's data as an instance of a uniform block"
+get_buffer_data(buf::Buffer, block::AbstractOglBlock, first_buffer_byte::Integer=1) = get_buffer_data(
+    buf, block_byte_array(block);
+    src_byte_offset=UInt(first_buffer_byte)
+)
+"Creates a new instance of uniform block data on the CPU, read from the given buffer"
+get_buffer_data(buf::Buffer, Block::Type{<:AbstractOglBlock}, first_buffer_byte::Integer = 1)::Block = Block(
+    get_buffer_data(
+        buf;
+        src_elements=IntervalU(
+            min=first_buffer_byte,
+            size=block_byte_size(Block)
+        )
+    )
+)
+
 glsl_type_decl(::Type{Bool}, name::String, struct_lookup::Dict{Type, String}) = "bool $name;"
 glsl_type_decl(::Type{Int32}, name::String, struct_lookup::Dict{Type, String}) = "int $name;"
 glsl_type_decl(::Type{Int64}, name::String, struct_lookup::Dict{Type, String}) = "int64 $name;"
@@ -114,12 +150,19 @@ glsl_type_decl(T::Type{<:AbstractOglBlock}, name::String, struct_lookup::Dict{Ty
 glsl_type_decl(::Type{NTuple{N, T}}, name::String, struct_lookup::Dict{Type, String}) where {N, T} = "$(glsl_type_decl(T, struct_lookup)) $name[$N]"
 
 
-
-#  Internals:  #
-
+const BLOCK_DEFAULT_BYTE::UInt8 = 0xAA
 
 Base.propertynames(x::AbstractOglBlock) = propertynames(typeof(x))
-Base.Ref(a::AbstractOglBlock) = Ref(block_byte_array(a), 1)
+
+struct BlockRef{T<:AbstractOglBlock} <: Ref{T}
+    block::T
+end
+Base.Ref(a::AbstractOglBlock) = BlockRef{typeof(a)}(a)
+Base.getindex(r::BlockRef) = r.block
+Base.unsafe_convert(P::Type{<:Ptr{<:Union{UInt8, Cvoid, T}}}, r::BlockRef{T}) where {T} = begin
+    arr = block_byte_array(r.block)
+    return Base.unsafe_convert(P, Base.pointer(Ref(arr, 1)))
+end
 
 @inline Base.getproperty(a::AbstractOglBlock, name::Symbol) = let Name = Val(name)
     block_property_get(
@@ -135,31 +178,48 @@ end
     )
 end
 
+Base.:(==)(a::T, b::T) where {T<:AbstractOglBlock} = block_byte_array(a) == block_byte_array(b)
+Base.hash(a::AbstractOglBlock, h::UInt)::UInt = hash(block_byte_array(a))
+
+function Base.show(io::IO, a::AbstractOglBlock)
+    print(io, Base.typename(typeof(a)).name, '(')
+    for (i, prop) in enumerate(propertynames(a))
+        if i > 1
+            print(io, ", ")
+        end
+        show(io, getproperty(a, prop))
+    end
+    print(io, ')')
+end
+
+
 
 #  Block Arrays:  #
 
+#TODO: AbstractBlockArray, StaticBlockArray, DynamicBlockArray
+
 "
-A facade for a (mutable) array of items within a buffer block.
+A facade for a mutable array of items within an `AbstractOglBlock`.
 
 The size is not specified at compile-time,
-    because some GPU arrays can be sized dynamically (ones at the tail end of the buffer memory).
+    because some GPU arrays can be sized dynamically (ones that sit at the tail end of the buffer memory).
 "
 struct BlockArray{T, TMode<:AbstractOglBlock, TArray<:AbstractVector{UInt8}} <: AbstractVector{T}
     buffer::TArray # Use same field name as the blocks themselves, for convenience
 end
 
 "Constructs the block-array with an existing byte array"
-BlockArray{T, TMode}(a::AbstractVector{UInt8}) where {T, TMode           } = BlockArray{T, TMode        , typeof(a)}(a)
 BlockArray{T       }(a::AbstractVector{UInt8}) where {T<:AbstractOglBlock} = BlockArray{T, block_mode(T), typeof(a)}(a)
+BlockArray{T, TMode}(a::AbstractVector{UInt8}) where {T, TMode           } = BlockArray{T, TMode        , typeof(a)}(a)
 "Constructs the block-array with an element count"
-BlockArray{T, TMode}(count::Int) where {T, TMode           } = BlockArray{T, TMode        , Vector{UInt8}}(Vector{UInt8}(undef, sizeof(T) * count))
-BlockArray{T       }(count::Int) where {T<:AbstractOglBlock} = BlockArray{T, block_mode(T), Vector{UInt8}}(Vector{UInt8}(undef, sizeof(T) * count))
+BlockArray{T       }(count::Int) where {T<:AbstractOglBlock} = BlockArray{T, block_mode(T), Vector{UInt8}}(fill(BLOCK_DEFAULT_BYTE, sizeof(T) * count))
+BlockArray{T, TMode}(count::Int) where {T, TMode           } = BlockArray{T, TMode        , Vector{UInt8}}(fill(BLOCK_DEFAULT_BYTE, sizeof(T) * count))
 
 "Returns the array's associated OglBlock type, OglBlock_std140 or OglBlock_std430"
-block_array_mode(a::BlockArray{T, TMode}) where {T, TMode} = TMode
+block_array_mode(::BlockArray{T, TMode}) where {T, TMode} = TMode
 
 # AbstractVector stuff:
-Base.eltype(a::BlockArray{T}) where {T} = T
+Base.eltype(::BlockArray{T}) where {T} = T
 Base.eltype(::Type{<:BlockArray{T}}) where {T} = T
 @inline Base.size(a::BlockArray{T}) where {T} = size(block_byte_array(a)) .÷ sizeof(T)
 block_array_stride(::Type{<:BlockArray{T}}) where {T} = sizeof(T)
@@ -168,8 +228,8 @@ Base.Ref(a::BlockArray{T}, i::Integer = 1) where {T} = Ref(block_byte_array(a), 
 @inline Base.setindex!(a::BlockArray, v, i::Integer) = block_index_set(a, i, eltype(a), v)
 println("#TODO: Slicing BlockArray")
 
-"Gets the mutable byte array underlying this buffer"
-block_byte_array(b::Union{AbstractOglBlock, BlockArray})::AbstractVector{UInt8} = getfield(b, :buffer)
+"Gets the mutable byte array underlying this array"
+block_byte_array(b::BlockArray)::AbstractVector{UInt8} = getfield(b, :buffer)
 @inline block_byte_size(x::BlockArray) = length(block_byte_array(x))
 
 
@@ -181,7 +241,9 @@ block_property_type(block_type, Name)::Type = error(block_type, " has no propert
 block_property_first_byte(block_type, Name)::Int = error(block_type, " has no property '", val_type(Name), "'")
 # Add helpful error messages for specific cases.
 block_property_type(b::AbstractOglBlock, name) = error("You should pass in a type, not an instance")
+block_property_type(b, name::Symbol) = error("You should pass in a Val{} for the name, not a Symbol")
 block_property_first_byte(b::AbstractOglBlock, name) = error("You should pass in a type, not an instance")
+block_property_first_byte(b, name::Symbol) = error("You should pass in a Val{} for the name, not a Symbol")
 
 # You can get and set the properties of a buffer block.
 block_property_get(block, name, TReturn) = error(
@@ -199,7 +261,6 @@ block_index_set(block, i, TReturn, value) = error(typeof(block), " cannot be ind
 
 
 # Normal bitstype getters/setters.
-error("#TODO: Start from here, updating the older getters/setters")
 @inline block_property_get(a::AbstractOglBlock, Name::Val, ::Type{TReturn}) where {TReturn} = reinterpret_from_bytes(
     block_byte_array(a),
     TReturn,
@@ -253,9 +314,8 @@ error("#TODO: Start from here, updating the older getters/setters")
 @inline block_index_get(a::BlockArray, i::Integer, ::Type{VecB{N}}) where {N} = map(f ->!iszero(f), block_index_get(
     a, i, VecU{N}
 ))
-@inline block_index_set(a::BlockArray, i::Integer, ::Type{Bool}, value) = block_index_set(
-    a, i,
-    UInt32,
+@inline block_index_set(a::BlockArray, i::Integer, ::Type{VecB{N}}, value) where {N} = block_index_set(
+    a, i, VecU{N},
     map(f -> convert(Bool, f) ? one(UInt32) : zero(UInt32), value)
 )
 
@@ -294,14 +354,16 @@ function block_index_set(a::BlockArray, i::Integer, T::Type{<:Mat{C, R, F}}, val
 end
 
 # Implementations of getter/setter for a property that is an array:
-@inline function block_property_get(a::AbstractOglBlock, Name::Val, ::Type{<:NTuple{N, T}}) where {N, T}
+@inline function block_property_get(a::AbstractOglBlock, Name::Val, ::Type{<:NTuple{N, T}}
+                                   ) where {N, T}
     b1 = block_property_first_byte(typeof(a), Name)
     bN = N * block_field_size(T, block_mode(a))
     bEnd = b1 + bN - 1
     return BlockArray{T, block_mode(a)}(@view(block_byte_array(a)[b1:bEnd]))
 end
 @inline function block_property_set(a::AbstractOglBlock, Name::Val, ::Type{<:NTuple{N, T}},
-                                    value::Union{ConstVector{T}, AbstractVector{T}}) where {T}
+                                    value::Union{ConstVector{T}, AbstractVector{T}}
+                                   ) where {N, T}
     @bp_gl_assert(length(value) == N,
                   "Expected to set ", typeof(a), ".", val_type(Name), " to an array of ",
                     N, " elements, but got ", length(value), " elements instead")
@@ -342,31 +404,22 @@ end
 end
 
 
-#= A new block struct (call it `s::S`) must implement the following:
-    * Base.propertynames(::Type{S})
-    * block_byte_size(::Type{S})
-    * block_property_type(::Type{<:S}, ::Val)
-    * block_property_first_byte(::Type{<:S}, ::Val)
-    * Internal constructor that takes an `AbstractVector{UInt8}`
-    * External constructor that takes all the fields and uses a `Vector{UInt8}` buffer
-=#
-
-
 #  OpenGL Spec implementation  #
 
 # Note that in this implementation, NTuple is used to represent static arrays.
 
-function block_field_alignment end
-function block_field_size end
+block_field_alignment()::Int = error("Unimplemented")
+block_field_size()::Int = error("Unimplemented")
 
-function block_array_element_alignment end
-function block_array_element_stride end
+block_array_element_alignment()::Int = error("Unimplemented")
+block_array_element_stride()::Int = error("Unimplemented")
 
 
 block_field_alignment(T::Type{<:AbstractOglBlock}, mode::Type{<:AbstractOglBlock}) = block_alignment(T)
 # Most scalars/vectors translate to the GPU trivially.
 # However bools are 4 bytes.
-block_field_alignment(T::Type{<:ScalarBits}      , mode::Type{<:AbstractOglBlock}) = (T == Bool) ? sizeof(UInt32) : sizeof(T)
+block_field_alignment(T::Type{<:ScalarBits}      , mode::Type{<:AbstractOglBlock}) = sizeof(T)
+block_field_alignment( ::Type{Bool}              , mode::Type{<:AbstractOglBlock}) = sizeof(UInt32)
 block_field_alignment( ::Type{Vec{N, T}}         , mode::Type{<:AbstractOglBlock}) where {N, T} =
     if N == 3
         block_field_alignment(Vec{4, T}, mode)
@@ -382,51 +435,47 @@ block_field_alignment( ::Type{<:NTuple{N, T}}    , mode::Type{<:AbstractOglBlock
 block_field_alignment( ::Type{<:Mat{C, R, F}}    , mode::Type{<:AbstractOglBlock}) where {C, R, F} =
     block_field_alignment(NTuple{C, Vec{R, F}}, mode)
 
-block_field_size(T::Type                    , mode::Type{<:AbstractOglBlock})                 = block_field_alignment(T, mode)
-block_field_size(T::Type{<:AbstractOglBlock}, mode::Type{<:AbstractOglBlock})                 = block_byte_size(T)
-block_field_size( ::Type{<:Mat{C, R, F}}    , mode::Type{<:AbstractOglBlock}) where {C, R, F} = block_field_size(NTuple{C, Vec{R, F}}, mode)
-block_field_size( ::Type{<:NTuple{N, T}}    , mode::Type{<:AbstractOglBlock}) where {N, T   } = N * block_field_alignment(NTuple{N, T}, mode)
+block_field_size(T::Type                         , mode::Type{<:AbstractOglBlock})                 = block_field_alignment(T, mode)
+block_field_size( ::Type{<:Vec{N, T}}            , mode::Type{<:AbstractOglBlock}) where {N, T}    = N * sizeof((T == Bool) ? UInt32 : T)
+block_field_size(T::Type{<:AbstractOglBlock}     , mode::Type{<:AbstractOglBlock})                 = block_byte_size(T)
+block_field_size( ::Type{<:Mat{C, R, F}}         , mode::Type{<:AbstractOglBlock}) where {C, R, F} = block_field_size(NTuple{C, Vec{R, F}}, mode)
+block_field_size( ::Type{<:NTuple{N, T}}         , mode::Type{<:AbstractOglBlock}) where {N, T   } = N * block_field_alignment(NTuple{N, T}, mode)
 
 # An array element's alignment is equal to its alignment as a field,
 #    if in std140 then rounded up to a multiple of v4f.
-block_array_element_alignment(T, mode)                    = block_field_alignment(T, mode)
-block_array_element_alignment(T, ::Type{OglBlock_std140}) = round_up_to_multiple(block_field_alignment(T, mode), sizeof(v4f))
+block_array_element_alignment(T, mode)                        = block_field_alignment(T, mode)
+block_array_element_alignment(T, mode::Type{OglBlock_std140}) = round_up_to_multiple(block_field_alignment(T, mode), sizeof(v4f))
 
 block_array_element_stride(T                    , mode)              = block_array_element_alignment(T, mode)
 block_array_element_stride(T::Type{<:Mat{C}}    , mode) where {C}    = C * block_array_element_alignment(T, mode)
 block_array_element_stride( ::Type{NTuple{N, T}}, mode) where {N, T} = N * block_array_element_stride(T, mode)
 
 
-function Base.:(==)(a::T, b::T)::Bool where {T<:AbstractOglBlock}
-    return all(Base.:(==).(
-        getproperty.(Ref(a), propertynames(T)),
-        getproperty.(Ref(b), propertynames(T))
-    ))
-end
+#= A new block struct (call it `s::S`) must implement the following:
+    * Base.propertynames(::Type{<:S})
+    * block_property_types(::Type{<:S})
+    * block_byte_size(::Type{<:S})
+    * block_padding_size(::Type{<:S})
+    * block_alignment(::Type{<:S})
+    * Per property:
+        * block_property_type(::Type{<:S}, ::Val)::Type
+            * Static arrays should return `NTuple{N, T}` instead of `BlockArray{T}`.
+        * block_property_first_byte(::Type{<:S}, ::Val)
+    * Internal constructor that takes an `AbstractVector{UInt8}`
+    * External constructor that takes all the fields and uses a `Vector{UInt8}` buffer initially filled with BLOCK_DEFAULT_BYTE
+=#
 
-function Base.hash(a::T, h::UInt)::UInt where {T<:AbstractOglBlock}
-    return hash(
-        getproperty.(Ref(a), propertynames(T)),
-        h
-    )
-end
-
-function Base.show(io::IO, a::AbstractOglBlock)
-    print(io, Base.typename(typeof(a)).name, '(')
-    for (i, prop) in enumerate(propertynames(a))
-        if i > 1
-            print(io, ", ")
-        end
-        show(io, getproperty(a, prop))
-    end
-    print(io, ')')
-end
+"Set this global to print generated buffer structs to the stream"
+BUFFER_LAYOUT_MACRO_DEBUG_STREAM::Optional{IO} = nothing
 
 
 #TODO: Support some kind of annotation for row-major matrices.
 """
-Generates an immutable struct using OpenGL-friendly types,
+Generates a struct of OpenGL data,
     whose byte layout exactly follows the std140 standard in shader blocks.
+
+The struct is backed by a mutable byte array, so you can get *and set* its properties.
+You can also nest `@std140` structs within each other and they will be laid out as the GPU expects.
 
 Sample usage:
 ````
@@ -447,25 +496,34 @@ const MY_UBO_DATA = MyOuterUniformBlock(
     ntuple(i -> zero(MyInnerUniformBlock), 5),
     true
 )
-println("i is: ", MY_UBO_DATA.i)
+println("MyOuterUniformBlock takes up ", length(block_byte_array(MY_UBO_DATA)), " bytes, ",
+          block_padding_size(MY_UBO_DATA), " of which is padding")
+println("i is ", MY_UBO_DATA.i)
 
-const MUTABLE_UBO = Ref(MyInnerUniformBlock(3.5,
-                                            vb4(false, false, true, true),
-                                            ntuple(i -> zero(v3f))))
-MUTABLE_UBO.f = 3.4f0
-println("f is: ", MUTABLE_UBO[].f)
+MY_UBO_DATA.i = 1122334455
+println("Now i is ", MY_UBO_DATA.i)
+
+# Upload the data to your GPU buffer:
+set_buffer_data(my_ubo, MY_UBO_DATA)
+
+# Download the data from your GPU buffer into a new or existing instance of the struct:
+my_ubo_data = get_buffer_data(my_ubo, MyOuterUniformBlock)
+get_buffer_data(my_second_ubo, my_ubo_data)
 ````
 """
 macro std140(struct_expr)
-    return block_struct_impl(struct_expr, :std140, __module__)
+    return block_struct_impl(struct_expr, OglBlock_std140, __module__)
 end
 """
-Generates an immutable struct using OpenGL-friendly types,
+Generates a struct of OpenGL data,
     whose byte layout exactly follows the std430 standard in shader blocks.
+
+The struct is backed by a mutable byte array, so you can get *and set* its properties.
+You can also nest `@std430` structs within each other and they will be laid out as the GPU expects.
 
 Sample usage:
 ````
-@std430 struct MyInnerShaderStorageBlock
+@std140 struct MyInnerUniformBlock
     f::Float32
     bools::vb4
     position_array::NTuple{12, v3f}
@@ -482,34 +540,41 @@ const MY_SSBO_DATA = MyOuterShaderStorageBlock(
     ntuple(i -> zero(MyInnerShaderStorageBlock), 5),
     true
 )
-println("i is: ", MY_SSBO_DATA.i)
+println("MyOuterShaderStorageBlock takes up ", length(block_byte_array(MY_SSBO_DATA)), " bytes, ",
+          block_padding_size(MY_SSBO_DATA), " of which is padding")
+println("i is ", MY_SSBO_DATA.i)
 
-const MUTABLE_SSBO = Ref(MyInnerShaderStorageBlock(3.5,
-                                                   vb4(false, false, true, true),
-                                                   ntuple(i -> zero(v3f))))
-MUTABLE_SSBO.f = 3.4f0
-println("f is: ", MUTABLE_SSBO[].f)
+MY_SSBO_DATA.i = 1122334455
+println("Now i is ", MY_SSBO_DATA.i)
+
+# Upload the data to your GPU buffer:
+set_buffer_data(my_ssbo, MY_SSBO_DATA)
+
+# Download the data from your GPU buffer into a new or existing instance of the struct:
+my_ssbo_data = get_buffer_data(my_ssbo, MyOuterShaderStorageBlock)
+get_buffer_data(my_second_ssbo, my_ssbo_data)
 ````
 """
 macro std430(struct_expr)
-    return block_struct_impl(struct_expr, :std430, __module__)
+    return block_struct_impl(struct_expr, OglBlock_std430, __module__)
 end
-function block_struct_impl(struct_expr, mode::Symbol, invoking_module::Module)
+function block_struct_impl(struct_expr, mode::Type{<:AbstractOglBlock}, invoking_module::Module)
     if !Base.is_expr(struct_expr, :struct)
         error("Expected struct block, got: ", struct_expr)
     elseif struct_expr.args[1]
         error("UBO struct cannot be mutable; wrap it in a Ref if you want that!")
     end
 
-    mode_switch(std140, std430) = if mode == :std140
+    mode_switch(std140, std430) = if mode == OglBlock_std140
                                       std140()
-                                  elseif mode == :std430
+                                  elseif mode == OglBlock_std430
                                       std430()
                                   else
                                       error("Unexpected mode: ", mode)
                                   end
-    base_type::Type{<:AbstractOglBlock} = mode_switch(() -> OglBlock_std140,
-                                                      () -> OglBlock_std430)
+    base_type::Type{<:AbstractOglBlock} = mode
+    mode_description = mode_switch(() -> :std140,
+                                   () -> :std430)
 
     SCALAR_TYPES = Union{Scalar32, Scalar64, Bool}
     VECTOR_TYPES = Union{(
@@ -526,9 +591,9 @@ function block_struct_impl(struct_expr, mode::Symbol, invoking_module::Module)
     # Parse the header.
     (is_mutable_from_cpu::Bool, struct_name, body::Expr) = struct_expr.args
     if !isa(struct_name, Symbol)
-        error(mode, " struct has invalid name: '", struct_name, "'")
+        error(mode_description, " struct has invalid name: '", struct_name, "'")
     elseif is_mutable_from_cpu
-        error(mode, " struct '", struct_name, "' must not be mutable")
+        @warn "You declared $struct_name as mutable, which is non-standard syntax and does not change anything"
     end
 
     # Parse the body.
@@ -537,20 +602,10 @@ function block_struct_impl(struct_expr, mode::Symbol, invoking_module::Module)
         if T <: Vec
             if !(T <: VECTOR_TYPES)
                 error("Invalid vector count or type in ", field_name, ": ", T)
-            elseif T <: Vec3
-                error("Problem with field ", field_name,
-                        ": 3D vectors are not padded correctly by every graphics driver, ",
-                        "and their size is almost always padded out to 4D anyway, so just use ",
-                        "a 4D vector")
             end
         elseif T <: Mat
             if !(T <: MATRIX_TYPES)
                 error("Invalid matrix size or component type in ", field_name, ": ", T)
-            elseif (T <: Mat{C, 3} where {C})
-                error("Problem with field ", field_name,
-                        ": 3D vectors (and by extension, 3-row matrices) are not padded correctly ",
-                        "by every graphics driver. Their size gets padded out to 4D anyway, ",
-                        "so just use a 4-row matrix.")
             end
         elseif T <: NTuple
             if is_within_array
@@ -558,9 +613,9 @@ function block_struct_impl(struct_expr, mode::Symbol, invoking_module::Module)
             end
             check_field_errors(field_name, eltype(T), true)
         elseif isstructtype(T) # Note that NTuple is a 'struct type', so
-                               #    we have to handle the NTuple case first
+                               #    it's important to handle the NTuple case first
             if !(T <: base_type)
-                error("Non-", mode, " struct referenced by ", field_name, ": ", T)
+                error("Non-", mode_description, " struct referenced by ", field_name, ": ", T)
             end
         elseif T <: SCALAR_TYPES
             # Nothing to check
@@ -577,11 +632,11 @@ function block_struct_impl(struct_expr, mode::Symbol, invoking_module::Module)
         if !isa(field_name, Symbol)
             error("Name of the field should be a simple token. Got: '", field_name, "'")
         end
+
         field_type = invoking_module.eval(field_type)
         if !isa(field_type, Type)
-            error("Expected a concrete type for the field's value. Got: ", field_type)
+            error("Expected a concrete type for the field's value. Got ", field_type)
         end
-
         check_field_errors(field_name, field_type)
 
         return (field_name, field_type)
@@ -592,7 +647,7 @@ function block_struct_impl(struct_expr, mode::Symbol, invoking_module::Module)
     total_padding_bytes::Int = 0
     max_field_alignment::Int = 0
     property_offsets = Vector{Int}()
-    function align_next_field(alignment, record_offset = true)
+    function align_to(alignment)
         max_field_alignment = max(max_field_alignment, alignment)
 
         missing_bytes = (alignment - (total_byte_size % alignment))
@@ -600,152 +655,80 @@ function block_struct_impl(struct_expr, mode::Symbol, invoking_module::Module)
             total_byte_size += missing_bytes
             total_padding_bytes += missing_bytes
         end
-
-        if record_offset
-            push!(property_offsets, total_byte_size)
-        end
     end
     for (field_name, field_type) in field_definitions
-        if field_type == Bool
-            align_next_field(4)
-            total_byte_size += 4
-        elseif field_type <: VecT{Bool}
-            n_components = length(field_type)
-            byte_size = 4 * n_components
-            alignment = 4 * (1, 2, 4, 4)[n_components]
+        field_alignment = block_field_alignment(field_type, mode)
+        field_size = block_field_size(field_type, mode)
 
-            align_next_field(alignment)
-            total_byte_size += byte_size
-        elseif field_type <: ScalarBits
-            byte_size = sizeof(field_type)
-            alignment = byte_size
+        # Insert padding bytes to align the field.
+        align_to(field_alignment)
 
-            align_next_field(alignment)
-            total_byte_size += byte_size
-        elseif field_type <: Vec
-            n_components = length(field_type)
-            component_type = eltype(field_type)
-            byte_size = sizeof(component_type) * n_components
-            alignment = sizeof(component_type) * (1, 2, 4, 4)[n_components]
-
-            align_next_field(alignment)
-            total_byte_size += byte_size
-        elseif field_type <: Mat
-            (C, R, F) = mat_params(field_type)
-
-            column_alignment = sizeof(F) * (1, 2, 4, 4)[R]
-            column_alignment = mode_switch(
-                () -> round_up_to_multiple(column_alignment, sizeof(v4f)),
-                () -> column_alignment
-            )
-
-            byte_size = C * column_alignment
-            alignment = column_alignment
-
-            align_next_field(alignment)
-            total_byte_size += byte_size
-        elseif field_type <: base_type
-            byte_size = sizeof(field_type)
-            alignment = block_alignment(field_type)
-
-            align_next_field(alignment)
-            total_byte_size += byte_size
-        elseif field_type <: NTuple
-            array_length = tuple_length(field_type)
-            element_type = eltype(field_type)
-
-            (element_alignment, element_stride) =
-                if element_type <: SCALAR_TYPES
-                    size = (element_type == Bool) ? 4 : sizeof(element_type)
-                    mode_switch(
-                        () -> (size = round_up_to_multiple(size, sizeof(v4f))),
-                        () -> nothing
-                    )
-                    (size, size)
-                elseif element_type <: Vec
-                    component_size = (eltype(element_type) == Bool) ?
-                                            4 :
-                                            sizeof(eltype(element_type))
-                    vec_size = (1, 2, 4, 4)[length(element_type)] * component_size
-                    mode_switch(
-                        () -> (vec_size = round_up_to_multiple(vec_size, sizeof(v4f))),
-                        () -> nothing
-                    )
-                    (vec_size, vec_size)
-                elseif element_type <: Mat
-                    (C, R, F) = mat_params(element_type)
-                    column_size = sizeof(F) * (1, 2, 4, 4)[R]
-                    mode_switch(
-                        () -> (column_size = round_up_to_multiple(column_size, sizeof(v4f))),
-                        () -> nothing
-                    )
-                    (column_size, column_size * C)
-                elseif element_type <: base_type
-                    # Any @std140/@std430 struct will already be padded to the right size,
-                    #    but the padding logic is still here for completeness.
-                    (a, s) = (block_alignment(element_type), sizeof(element_type))
-                    mode_switch(
-                        () -> (round_up_to_multiple(a, sizeof(v4f)),
-                               round_up_to_multiple(s, sizeof(v4f))),
-                        () -> (a, s)
-                    )
-                else
-                    error("Unhandled case: ", element_type)
-                end
-
-            align_next_field(element_alignment)
-            total_byte_size += element_stride * array_length
-        else
-            error("Unhandled: ", field_type)
-        end
+        # Insert the field's own bytes.
+        push!(property_offsets, total_byte_size)
+        total_byte_size += block_field_size(field_type, mode)
     end
 
-    # Struct alignment is the largest field alignment, then in std140 rounded up to a vec4 alignment.
+    # Struct alignment is based on the largest alignment of its fields.
     struct_alignment = mode_switch(
         () -> round_up_to_multiple(max_field_alignment, sizeof(v4f)),
         () -> max_field_alignment
     )
-
     # Add padding to the struct to match its alignment.
     # Note that this inadvertently modifies 'max_field_alignment',
     #    but that variable isn't used past this point.
-    align_next_field(struct_alignment, false)
+    align_to(struct_alignment)
+    max_field_alignment = -1
 
-    # Generate the final code.
-    struct_name_str = string(struct_name)
-    struct_name = esc(struct_name)
-    (property_names, property_types) = unzip(field_definitions, 2)
-    property_functions = map(zip(field_definitions, property_offsets)) do ((name, type), offset)
-        compile_time_name = :( Val{$(QuoteNode(name))} )
-        return quote
-            $(@__MODULE__).property_offset(::Type{$struct_name}, ::$compile_time_name) = $offset
-            $(@__MODULE__).property_type(::Type{$struct_name}, ::$compile_time_name) = $type
+    # Generate the functions that need generating.
+    struct_name_esc = esc(struct_name)
+    struct_type_esc = :( Type{<:$struct_name_esc} )
+    output = quote
+        Core.@__doc__ struct $struct_name_esc{Buffer<:AbstractVector{UInt8}} <: $mode
+            $(BUFFER_FIELD_NAME)::Buffer
 
-            $(esc(:Base)).getproperty(a::$struct_name, ::$compile_time_name) =
-                $(block_macro_get_property_body(struct_name, name, offset, type, mode))
-            $(esc(:Base)).setproperty!(r::Ref{$struct_name}, ::$compile_time_name, value) =
-                $(block_macro_set_property_body(struct_name, name, offset, type, mode))
+            $struct_name_esc(buffer::AbstractVector{UInt8}) = new{typeof(buffer)}(buffer)
         end
-    end
-    return quote
-        Core.@__doc__ struct $struct_name <: $base_type
-            var"raw bytes"::NTuple{$total_byte_size, UInt8}
+
+        # Constructor that takes field values:
+        function $struct_name_esc($((esc(n) for (n, t) in field_definitions)...))
+            s = $struct_name_esc(fill(BLOCK_DEFAULT_BYTE, block_byte_size($struct_name_esc)))
+            # Set each property to its corresponding constructor parameter.
+            $((map(field_definitions) do (n,t); :(
+                s.$n = $(esc(n))
+            ) end)...)
+            return s
         end
-        @bp_check(sizeof($struct_name) == $total_byte_size,
-                  $struct_name_str, " should be ", $total_byte_size,
-                    " bytes but it was changed by Julia to ", sizeof($struct_name))
 
-        Base.propertynames(::Type{$struct_name}) = tuple($(QuoteNode.(property_names)...))
-        $(@__MODULE__).property_types(::Type{$struct_name}) = tuple($(property_types...))
-        $(property_functions...)
+        # Provide metadata.
+        $(@__MODULE__).block_byte_size(::$struct_type_esc) = $total_byte_size
+        $(@__MODULE__).block_padding_size(::$struct_type_esc) = $total_padding_bytes
+        $(@__MODULE__).block_alignment(::$struct_type_esc) = $struct_alignment
 
-        $(@__MODULE__).padding_size(::Type{$struct_name}) = $total_padding_bytes
-        $(@__MODULE__).block_alignment(::Type{$struct_name}) = $struct_alignment
-
-        $struct_name($(esc.(property_names)...)) = $(@__MODULE__).construct_block($struct_name, $(esc.(property_names)...))
+        # Advertise this type's properties.
+        $Base.propertynames(::$struct_type_esc) = $(Tuple(
+            n for (n, t) in field_definitions
+        ))
+        $(@__MODULE__).block_property_types(::$struct_type_esc) = tuple($((
+            t for (n, t) in field_definitions
+        )...))
+        $((map(zip(field_definitions, property_offsets)) do ((field_name, field_type), field_offset)
+            name_val_expr = :( Val{$(QuoteNode(field_name))} )
+            quote
+                $(@__MODULE__).block_property_type(      ::$struct_type_esc, ::$name_val_expr) = $field_type
+                $(@__MODULE__).block_property_first_byte(::$struct_type_esc, ::$name_val_expr) = $field_offset + 1
+            end
+        end)...)
     end
+    if exists(BUFFER_LAYOUT_MACRO_DEBUG_STREAM)
+        println(BUFFER_LAYOUT_MACRO_DEBUG_STREAM,
+                 "@", mode_description, "(", struct_name, "):",
+                 "\n", output)
+    end
+    return output
 end
 
-export @std140, @std430
-       padding_size, block_byte_array,
-       glsl_decl, GLSLBlockDecl
+export @std140, @std430,
+       block_byte_size, block_padding_size, block_alignment, block_byte_array,
+       block_property_types, block_property_type,
+       glsl_decl, GLSLBlockDecl,
+       BlockArray

@@ -5,10 +5,14 @@
   * `gui_tab_item()`
 * Add `convert_pixel()` to translate `ImageIO` data into B+ terms
 * Fix bug when using `View` instead of `Texture` in CImGui/GuiService
+* More ways to interact with Buffers:
+  * Give it a plain byte array with `set_buffer_bytes()`.
+  * Give it a block struct (`@std140` or `@std430`) with `set_buffer_data()`.
 * Allow getting the handle of a `View` with `get_ogl_handle(v)`
-* **[Breaking]** Fix how `@std140` and `@std430` work
+* **[Breaking]** Completely rewrite `@std140` and `@std430`
   * They must be mutable to avoid Julia JIT dying on crazy immutable types like `NTuple{16400, UInt8}`
-  * Now acts like a nested series of mutable structs, but is actually one contiguous buffer owned by the outermost struct
+  * Now they are backed by a mutable byte array rather than an `NTuple` of bytes
+    * Nested structs and static-arrays are views of the outermost struct's byte array
 
 # v0.1.1
 
