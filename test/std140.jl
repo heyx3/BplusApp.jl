@@ -7,7 +7,8 @@
     i::Int32 # 29 - 32
     vi::v2i # 33 - 40
     # Pad 41-48
-    bs::NTuple{25, Bool} # 49 = 148
+    bs::NTuple{25, Bool} # 49 - 448
+    m::@Mat(3, 2, Float64) # 449 - 496
     # Struct alignment: 16
 end
 
@@ -20,16 +21,19 @@ function Base.print(io::IO, a::A; indentation="")
         println(io, indentation, "\ti  = ", a.i)
         println(io, indentation, "\tvi = ", a.vi)
         println(io, indentation, "\tbs = ...")
+        println(io, indentation, "\tm = ", a.m)
     print(io, indentation, ")")
 end
 
 # Test struct A:
 @bp_test_no_allocations(block_byte_size(A),
-                        148,
+                        496,
                         "Struct 'A' in std140 layout is ", block_byte_size(A), " bytes")
-@bp_test_no_allocations(propertynames(A), (:f, :b, :vf, :i, :vi, :bs))
-@bp_test_no_allocations(block_property_types(A), (Float32, Bool, v3f, Int32, v2i, NTuple{25, Bool}))
-a1_args() = (@f32(1.4), true, v3f(4.4, 5.5, 6.6), 4, v2i(-3, -200), ntuple(i -> (i%3)==0, Val(25)))
+@bp_test_no_allocations(propertynames(A), (:f, :b, :vf, :i, :vi, :bs, :m))
+@bp_test_no_allocations(block_property_types(A), (Float32, Bool, v3f, Int32, v2i, NTuple{25, Bool}, @Mat(3, 2, Float64)))
+a1_args() = (@f32(1.4), true, v3f(4.4, 5.5, 6.6), 4, v2i(-3, -200),
+             ntuple(i -> (i%3)==0, Val(25)),
+             @Mat(3, 2, Float64)(1, 2, 3, 4, 5, 6))
 make_a_1() = A(a1_args()...)
 @bp_test_no_allocations(typeof(make_a_1()), A{Vector{UInt8}})
 @bp_test_no_allocations(getproperty.(Ref(make_a_1()), propertynames(A)),
@@ -45,12 +49,16 @@ check_A_field(:vf, v3f, 17)
 check_A_field(:i, Int32, 29)
 check_A_field(:vi, v2i, 33)
 check_A_field(:bs, NTuple{25, Bool}, 49)
+check_A_field(:m, @Mat(3, 2, Float64), 449)
 let sprinted = sprint(show, make_a_1()),
     sprinted_args = sprint.(Ref(show), a1_args())
   @bp_check(sprinted == "A($(join(sprinted_args, ", ")))",
             "Actual value: ", sprinted, "\n")
 end
 @bp_test_no_allocations(block_alignment(A), 16)
+#TODO: Test padding byte count
+#TODO: Test bool array
+#TODO: Test matrix
 
 
 @std140 struct B

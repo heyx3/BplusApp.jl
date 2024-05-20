@@ -212,8 +212,8 @@ end
 BlockArray{T       }(a::AbstractVector{UInt8}) where {T<:AbstractOglBlock} = BlockArray{T, block_mode(T), typeof(a)}(a)
 BlockArray{T, TMode}(a::AbstractVector{UInt8}) where {T, TMode           } = BlockArray{T, TMode        , typeof(a)}(a)
 "Constructs the block-array with an element count"
-BlockArray{T       }(count::Int) where {T<:AbstractOglBlock} = BlockArray{T, block_mode(T), Vector{UInt8}}(fill(BLOCK_DEFAULT_BYTE, sizeof(T) * count))
-BlockArray{T, TMode}(count::Int) where {T, TMode           } = BlockArray{T, TMode        , Vector{UInt8}}(fill(BLOCK_DEFAULT_BYTE, sizeof(T) * count))
+BlockArray{T       }(count::Int) where {T<:AbstractOglBlock} = BlockArray{T, block_mode(T), Vector{UInt8}}(fill(BLOCK_DEFAULT_BYTE, block_array_element_stride(T, block_mode(T)) * count))
+BlockArray{T, TMode}(count::Int) where {T, TMode           } = BlockArray{T, TMode        , Vector{UInt8}}(fill(BLOCK_DEFAULT_BYTE, block_array_element_stride(T, TMode        ) * count))
 
 "Returns the array's associated OglBlock type, OglBlock_std140 or OglBlock_std430"
 block_array_mode(::BlockArray{T, TMode}) where {T, TMode} = TMode
@@ -221,9 +221,8 @@ block_array_mode(::BlockArray{T, TMode}) where {T, TMode} = TMode
 # AbstractVector stuff:
 Base.eltype(::BlockArray{T}) where {T} = T
 Base.eltype(::Type{<:BlockArray{T}}) where {T} = T
-@inline Base.size(a::BlockArray{T}) where {T} = size(block_byte_array(a)) .÷ sizeof(T)
-block_array_stride(::Type{<:BlockArray{T}}) where {T} = sizeof(T)
-Base.Ref(a::BlockArray{T}, i::Integer = 1) where {T} = Ref(block_byte_array(a), i * sizeof(T))
+@inline Base.size(a::BlockArray{T}) where {T} = length(block_byte_array(a)) ÷ block_array_element_stride(T, block_array_mode(a))
+Base.Ref(a::BlockArray{T}, i::Integer = 1) where {T} = Ref(block_byte_array(a), i * block_array_element_stride(T, block_array_mode(a)))
 @inline Base.getindex(a::BlockArray, i::Integer) = block_index_get(a, i, eltype(a))
 @inline Base.setindex!(a::BlockArray, v, i::Integer) = block_index_set(a, i, eltype(a), v)
 println("#TODO: Slicing BlockArray")
@@ -357,7 +356,7 @@ end
 @inline function block_property_get(a::AbstractOglBlock, Name::Val, ::Type{<:NTuple{N, T}}
                                    ) where {N, T}
     b1 = block_property_first_byte(typeof(a), Name)
-    bN = N * block_field_size(T, block_mode(a))
+    bN = block_field_size(NTuple{N, T}, block_mode(a))
     bEnd = b1 + bN - 1
     return BlockArray{T, block_mode(a)}(@view(block_byte_array(a)[b1:bEnd]))
 end
@@ -368,7 +367,7 @@ end
                   "Expected to set ", typeof(a), ".", val_type(Name), " to an array of ",
                     N, " elements, but got ", length(value), " elements instead")
     b1 = block_property_first_byte(typeof(a), Name)
-    bN = N * block_field_size(T, block_mode(a))
+    bN = block_field_size(NTuple{N, T}, block_mode(a))
     bEnd = b1 + bN - 1
     reinterpret_to_bytes(value, @view(block_byte_array(a)[b1:bEnd]))
 end
