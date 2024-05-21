@@ -221,7 +221,13 @@ block_array_mode(::BlockArray{T, TMode}) where {T, TMode} = TMode
 # AbstractVector stuff:
 Base.eltype(::BlockArray{T}) where {T} = T
 Base.eltype(::Type{<:BlockArray{T}}) where {T} = T
-@inline Base.size(a::BlockArray{T}) where {T} = length(block_byte_array(a)) ÷ block_array_element_stride(T, block_array_mode(a))
+function Base.size(a::BlockArray{T}) where {T}
+    stride = block_array_element_stride(T, block_array_mode(a))
+    n_bytes = length(block_byte_array(a))
+    @bp_gl_assert((n_bytes % stride) == 0, "$n_byte bytes total / $stride")
+    n_elements = n_bytes ÷ stride
+    return tuple(n_elements)
+end
 Base.Ref(a::BlockArray{T}, i::Integer = 1) where {T} = Ref(block_byte_array(a), i * block_array_element_stride(T, block_array_mode(a)))
 @inline Base.getindex(a::BlockArray, i::Integer) = block_index_get(a, i, eltype(a))
 @inline Base.setindex!(a::BlockArray, v, i::Integer) = block_index_set(a, i, eltype(a), v)
@@ -244,6 +250,18 @@ block_property_type(b, name::Symbol) = error("You should pass in a Val{} for the
 block_property_first_byte(b::AbstractOglBlock, name) = error("You should pass in a type, not an instance")
 block_property_first_byte(b, name::Symbol) = error("You should pass in a Val{} for the name, not a Symbol")
 
+# Helpers to get the byte range for properties/elements.
+function block_property_byte_range(block_type, Name)
+    b1 = block_property_first_byte(block_type, Name)
+    bN = block_field_size(Name, block_mode(block_type))
+    return b1 : (b1 + bN - 1)
+end
+function block_array_byte_range(el_type, mode, index)
+    bN = block_array_element_stride(el_type, mode)
+    b1 = 1 + (bN * (index - 1))
+    return b1 : (b1 + bN - 1)
+end
+
 # You can get and set the properties of a buffer block.
 block_property_get(block, name, TReturn) = error(
     typeof(block), " has no property '",
@@ -260,29 +278,25 @@ block_index_set(block, i, TReturn, value) = error(typeof(block), " cannot be ind
 
 
 # Normal bitstype getters/setters.
-@inline block_property_get(a::AbstractOglBlock, Name::Val, ::Type{TReturn}) where {TReturn} = reinterpret_from_bytes(
-    block_byte_array(a),
-    TReturn,
-    block_property_first_byte(typeof(a), Name)
+@inline block_property_get(a::AbstractOglBlock, Name::Val, ::Type{TReturn}) where {TReturn} = reinterpret_bytes(
+    @view(block_byte_array(a)[block_property_byte_range(typeof(a), Name)]),
+    TReturn
 )
 @inline block_property_set(a::AbstractOglBlock, Name::Val, ::Type{TReturn}, value) where {TReturn} = reinterpret_to_bytes(
     convert(TReturn, value),
-    block_byte_array(a),
-    block_property_first_byte(typeof(a), Name)
+    @view(block_byte_array(a)[block_property_byte_range(typeof(a), Name)])
 )
 @inline block_index_get(a::BlockArray, i::Integer, ::Type{TReturn}) where {TReturn} = reinterpret_from_bytes(
-    block_byte_array(a),
-    TReturn,
-    1 + (block_array_element_stride(TReturn, block_array_mode(a)) * (i - 1))
+    @view(block_byte_array(a)[block_array_byte_range(TReturn, block_array_mode(a), i)]),
+    TReturn
 )
 @inline block_index_set(a::BlockArray, i::Integer, ::Type{TReturn}, value) where {TReturn} = reinterpret_to_bytes(
     convert(TReturn, value),
-    block_byte_array(a),
-    1 + (block_array_element_stride(TReturn, block_array_mode(a)) * (i - 1))
+    @view(block_byte_array(a)[block_array_byte_range(TReturn, block_array_mode(a), i)])
 )
 
 # Bools are stored in a block as UInt32.
-@inline block_property_get(a::AbstractOglBlock, Name::Val, ::Type{Bool}) = !iszero(block_property_get(
+@inline block_property_get(a::AbstractOglBlock, Name::Val, ::Type{Bool})::Bool = !iszero(block_property_get(
     a,
     Name,
     UInt32
@@ -291,7 +305,7 @@ block_index_set(block, i, TReturn, value) = error(typeof(block), " cannot be ind
     a, Name,
     UInt32, convert(Bool, value) ? one(UInt32) : zero(UInt32)
 )
-@inline block_index_get(a::BlockArray, i::Integer, ::Type{Bool}) = !iszero(block_index_get(
+@inline block_index_get(a::BlockArray, i::Integer, ::Type{Bool})::Bool = !iszero(block_index_get(
     a, i, UInt32
 ))
 @inline block_index_set(a::BlockArray, i::Integer, ::Type{Bool}, value) = block_index_set(
@@ -321,8 +335,7 @@ block_index_set(block, i, TReturn, value) = error(typeof(block), " cannot be ind
 # Matrix properties are stored in columns, like an array of vectors.
 function block_property_get(a::AbstractOglBlock, Name::Val, ::Type{<:Mat{C, R, F}}) where {C, R, F}
     arr = block_property_get(a, Name, NTuple{C, Vec{R, F}})
-    column_vectors = Iterators.flatten(arr)
-    elements_by_column = Iterators.flatten(column_vectors)
+    elements_by_column  = Iterators.flatten(arr)
     return @Mat(C, R, F)(elements_by_column...)
 end
 function block_property_set(a::AbstractOglBlock, Name::Val, ::Type{<:Mat{C, R, F}}, value) where {C, R, F}
@@ -332,9 +345,7 @@ function block_property_set(a::AbstractOglBlock, Name::Val, ::Type{<:Mat{C, R, F
     end
 end
 function block_index_get(a::BlockArray, i::Integer, T::Type{<:Mat{C, R, F}}) where {C, R, F}
-    bN = block_array_element_stride(T, block_array_mode(a))
-    b1 = 1 + (bN * (i - 1))
-    a_view = @view block_byte_array(a)[b1:(b1+bN-1)]
+    a_view = @view block_byte_array(a)[block_array_byte_range(T, block_array_mode(a), i)]
     arr = BlockArray{Vec{R, F}, block_array_mode(a)}(a_view)
 
     column_vectors = Iterators.flatten(arr)
@@ -342,9 +353,7 @@ function block_index_get(a::BlockArray, i::Integer, T::Type{<:Mat{C, R, F}}) whe
     return @Mat(C, R, F)(elements_by_column...)
 end
 function block_index_set(a::BlockArray, i::Integer, T::Type{<:Mat{C, R, F}}, value) where {C, R, F}
-    bN = block_array_element_stride(T, block_array_mode(a))
-    b1 = 1 + (bN * (i - 1))
-    a_view = @view block_byte_array(a)[b1:(b1+bN-1)]
+    a_view = @view block_byte_array(a)[block_array_byte_range(T, block_array_mode(a), i)]
     arr = BlockArray{Vec{R, F}, block_array_mode(a)}(a_view)
 
     for col in 1:C
@@ -355,51 +364,47 @@ end
 # Implementations of getter/setter for a property that is an array:
 @inline function block_property_get(a::AbstractOglBlock, Name::Val, ::Type{<:NTuple{N, T}}
                                    ) where {N, T}
-    b1 = block_property_first_byte(typeof(a), Name)
-    bN = block_field_size(NTuple{N, T}, block_mode(a))
-    bEnd = b1 + bN - 1
-    return BlockArray{T, block_mode(a)}(@view(block_byte_array(a)[b1:bEnd]))
+    byte_range = block_property_byte_range(typeof(a), Name)
+    arr = @view(block_byte_array(a)[byte_range])
+    return BlockArray{T, block_mode(a)}(arr)
 end
 @inline function block_property_set(a::AbstractOglBlock, Name::Val, ::Type{<:NTuple{N, T}},
-                                    value::Union{ConstVector{T}, AbstractVector{T}}
+                                    values
                                    ) where {N, T}
     @bp_gl_assert(length(value) == N,
                   "Expected to set ", typeof(a), ".", val_type(Name), " to an array of ",
                     N, " elements, but got ", length(value), " elements instead")
-    b1 = block_property_first_byte(typeof(a), Name)
-    bN = block_field_size(NTuple{N, T}, block_mode(a))
-    bEnd = b1 + bN - 1
-    reinterpret_to_bytes(value, @view(block_byte_array(a)[b1:bEnd]))
+    arr = block_property_get(a, Name, NTuple{N, T})
+    # The padding of the input array likely isn't going to line up with the std140 padding,
+    #    so we have to set it element-by-element.
+    for (i, element) in enumerate(value)
+        arr[i] = element
+    end
 end
 
 # Implementations of getter/setter for a block property:
 @inline function block_property_get(a::AbstractOglBlock, Name::Val, T::Type{<:AbstractOglBlock})
-    b1 = block_property_first_byte(typeof(a), Name)
-    bN = block_byte_size(T)
-    bEnd = b1 + bN - 1
-    arr = @view block_byte_array(a)[b1:bEnd]
+    byte_range = block_property_byte_range(typeof(a), Name)
+    arr = @view block_byte_array(a)[byte_range]
     return T{typeof(arr)}(arr)
 end
 @inline function block_property_set(a::AbstractOglBlock, Name::Val, ::Type{T}, value::T) where {T<:AbstractOglBlock}
-    b1 = block_property_first_byte(typeof(a), Name)
-    bN = block_byte_size(T)
-    bEnd = b1 + bN - 1
-    block_byte_array(a)[b1:bEnd] = block_byte_array(value)
+    byte_range = block_property_byte_range(typeof(a), Name)
+    block_byte_array(a)[byte_range] = block_byte_array(value)
 end
 
 # Implementations of getter/setter for an array element that's an OglBlock:
 @inline function block_index_get(a::BlockArray{T}, i::Integer, ::Type{T}) where {T<:AbstractOglBlock}
-    b1 = 1 + (i * block_byte_size(T))
-    bN = block_byte_size(T)
-    bEnd = b1 + bN - 1
-    arr = @view block_byte_array(a)[b1:bEnd]
+    byte_range = block_array_byte_range(T, block_mode(a), i)
+    arr = @view block_byte_array(a)[byte_range]
     return T{typeof(arr)}(arr)
 end
 @inline function block_index_set(a::BlockArray{T}, i::Integer, ::Type{T}, value::T) where {T<:AbstractOglBlock}
     b1 = 1 + (i * block_byte_size(T))
     bN = block_byte_size(T)
     bEnd = b1 + bN - 1
-    block_byte_array(a)[b1:bEnd] = block_byte_array(value)
+    block_byte_range = block_array_byte_range(T, block_mode(a), i)
+    block_byte_array(a)[block_byte_range] = block_byte_array(value)
 end
 
 
@@ -445,9 +450,10 @@ block_field_size( ::Type{<:NTuple{N, T}}         , mode::Type{<:AbstractOglBlock
 block_array_element_alignment(T, mode)                        = block_field_alignment(T, mode)
 block_array_element_alignment(T, mode::Type{OglBlock_std140}) = round_up_to_multiple(block_field_alignment(T, mode), sizeof(v4f))
 
-block_array_element_stride(T                    , mode)              = block_array_element_alignment(T, mode)
-block_array_element_stride(T::Type{<:Mat{C}}    , mode) where {C}    = C * block_array_element_alignment(T, mode)
-block_array_element_stride( ::Type{NTuple{N, T}}, mode) where {N, T} = N * block_array_element_stride(T, mode)
+block_array_element_stride(T                          , mode)              = block_array_element_alignment(T, mode)
+block_array_element_stride(T::Type{<:AbstractOglBlock}, mode)              = block_byte_size(T)
+block_array_element_stride(T::Type{<:Mat{C}}          , mode) where {C}    = C * block_array_element_alignment(T, mode)
+block_array_element_stride( ::Type{NTuple{N, T}}      , mode) where {N, T} = N * block_array_element_stride(T, mode)
 
 
 #= A new block struct (call it `s::S`) must implement the following:
