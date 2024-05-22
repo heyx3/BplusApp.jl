@@ -237,6 +237,8 @@ println("#TODO: Slicing BlockArray")
 block_byte_array(b::BlockArray)::AbstractVector{UInt8} = getfield(b, :buffer)
 @inline block_byte_size(x::BlockArray) = length(block_byte_array(x))
 
+Base.Ref(a::BlockArray, i) = Ref(block_byte_array(a), i)
+
 
 #  Property/element getters and setters:  #
 
@@ -252,8 +254,9 @@ block_property_first_byte(b, name::Symbol) = error("You should pass in a Val{} f
 
 # Helpers to get the byte range for properties/elements.
 function block_property_byte_range(block_type, Name)
+    T = block_property_type(block_type, Name)
     b1 = block_property_first_byte(block_type, Name)
-    bN = block_field_size(Name, block_mode(block_type))
+    bN = block_field_size(T, block_mode(block_type))
     return b1 : (b1 + bN - 1)
 end
 function block_array_byte_range(el_type, mode, index)
@@ -282,15 +285,15 @@ block_index_set(block, i, TReturn, value) = error(typeof(block), " cannot be ind
     @view(block_byte_array(a)[block_property_byte_range(typeof(a), Name)]),
     TReturn
 )
-@inline block_property_set(a::AbstractOglBlock, Name::Val, ::Type{TReturn}, value) where {TReturn} = reinterpret_to_bytes(
+@inline block_property_set(a::AbstractOglBlock, Name::Val, ::Type{TReturn}, value) where {TReturn} = reinterpret_bytes(
     convert(TReturn, value),
     @view(block_byte_array(a)[block_property_byte_range(typeof(a), Name)])
 )
-@inline block_index_get(a::BlockArray, i::Integer, ::Type{TReturn}) where {TReturn} = reinterpret_from_bytes(
+@inline block_index_get(a::BlockArray, i::Integer, ::Type{TReturn}) where {TReturn} = reinterpret_bytes(
     @view(block_byte_array(a)[block_array_byte_range(TReturn, block_array_mode(a), i)]),
     TReturn
 )
-@inline block_index_set(a::BlockArray, i::Integer, ::Type{TReturn}, value) where {TReturn} = reinterpret_to_bytes(
+@inline block_index_set(a::BlockArray, i::Integer, ::Type{TReturn}, value) where {TReturn} = reinterpret_bytes(
     convert(TReturn, value),
     @view(block_byte_array(a)[block_array_byte_range(TReturn, block_array_mode(a), i)])
 )
@@ -371,13 +374,13 @@ end
 @inline function block_property_set(a::AbstractOglBlock, Name::Val, ::Type{<:NTuple{N, T}},
                                     values
                                    ) where {N, T}
-    @bp_gl_assert(length(value) == N,
+    @bp_gl_assert(length(values) == N,
                   "Expected to set ", typeof(a), ".", val_type(Name), " to an array of ",
-                    N, " elements, but got ", length(value), " elements instead")
+                    N, " elements, but got ", length(values), " elements instead")
     arr = block_property_get(a, Name, NTuple{N, T})
     # The padding of the input array likely isn't going to line up with the std140 padding,
     #    so we have to set it element-by-element.
-    for (i, element) in enumerate(value)
+    for (i, element) in enumerate(values)
         arr[i] = element
     end
 end
@@ -691,17 +694,23 @@ function block_struct_impl(struct_expr, mode::Type{<:AbstractOglBlock}, invoking
         Core.@__doc__ struct $struct_name_esc{Buffer<:AbstractVector{UInt8}} <: $mode
             $(BUFFER_FIELD_NAME)::Buffer
 
+            $struct_name_esc() = new{Vector{UInt8}}(fill(
+                $BLOCK_DEFAULT_BYTE,
+                $(@__MODULE__).block_byte_size($struct_name_esc)
+            ))
             $struct_name_esc(buffer::AbstractVector{UInt8}) = new{typeof(buffer)}(buffer)
         end
 
         # Constructor that takes field values:
-        function $struct_name_esc($((esc(n) for (n, t) in field_definitions)...))
-            s = $struct_name_esc(fill(BLOCK_DEFAULT_BYTE, block_byte_size($struct_name_esc)))
-            # Set each property to its corresponding constructor parameter.
-            $((map(field_definitions) do (n,t); :(
-                s.$n = $(esc(n))
-            ) end)...)
-            return s
+        if $(!isempty(field_definitions))
+            function $struct_name_esc($((esc(n) for (n, t) in field_definitions)...))
+                s = $struct_name_esc(fill(BLOCK_DEFAULT_BYTE, block_byte_size($struct_name_esc)))
+                # Set each property to its corresponding constructor parameter.
+                $((map(field_definitions) do (n,t); :(
+                    s.$n = $(esc(n))
+                ) end)...)
+                return s
+            end
         end
 
         # Provide metadata.

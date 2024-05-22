@@ -43,8 +43,9 @@ check_A_field(:i, Int32, 29)
 check_A_field(:vi, v2i, 33)
 check_A_field(:bs, NTuple{25, Bool}, 49)
 check_A_field(:m, @Mat(3, 2, Float64), 449)
+const A1_ARRAY = [(i%3)==0 for i in 1:25]
 a1_args() = (@f32(1.4), true, v3f(4.4, 5.5, 6.6), 4, v2i(-3, -200),
-             ntuple(i -> (i%3)==0, Val(25)),
+             A1_ARRAY,
              @Mat(3, 2, Float64)(1, 2, 3, 4, 5, 6))
 make_a_1() = A(a1_args()...)
 @bp_test_no_allocations(typeof(make_a_1()), A{Vector{UInt8}})
