@@ -170,4 +170,54 @@ end
 # Testing show() on a struct this big is impractical.
 
 
-#TODO: Compute shader to test the GLSL decl and layout are correct
+# Test the generated GLSL code and that the layout matches up with OpenGL,
+#    by writing a compute shader that reads/writes the data.
+bp_gl_context( v2i(300, 300), "std140 test with compute shader";
+                vsync=VsyncModes.on,
+                debug_mode=true
+             ) do context::Context
+    shader = BplusApp.GL.bp_glsl_str("""
+        #START_COMPUTE
+        layout(local_size_x = 1) in;
+
+        struct A {
+            $(glsl_decl(A))
+        };
+        struct B {
+            $(glsl_decl(B))
+        };
+
+        layout(std140, binding = 0) uniform Cin {
+            $(glsl_decl(C))
+        } u_in;
+        layout(std140, binding = 0) buffer Cout {
+            $(glsl_decl(C))
+        } u_out;
+
+        void main() {
+            $((
+                "u_out.$f = u_in.$f;"
+                 for f in propertynames(C)
+            )...)
+        }
+    """, debug_out = stderr)
+
+    # Send the data to one GPU buffer.
+    c_cpu = TEST_C
+    c_in_gpu = Buffer(true, c_cpu)
+    set_uniform_block(c_in_gpu, 1)
+
+    # Set up a second GPU buffer to receive it.
+    c_out_gpu = Buffer(true, C())
+    set_shader_storage_block(c_out_gpu, 1)
+
+    # Run the shader which copies the data.
+    dispatch_compute_groups(shader, one(v3i))
+    gl_catch_up_before(MemoryActions.buffer_download_or_upload)
+
+    # Download and test the results.
+    c_cpu_bytes = Vector{UInt8}(undef, block_byte_size(C))
+    get_buffer_data(c_out_gpu, c_cpu_bytes)
+    c_cpu_2 = C{Vector{UInt8}}(c_cpu_bytes)
+    @bp_test_no_allocations(c_cpu, c_cpu_2)
+end

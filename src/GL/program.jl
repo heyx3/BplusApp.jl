@@ -890,8 +890,12 @@ end
 Compiles a string with special formatting into a `Program`.
 For info on how to format it, refer to the docs for `@bp_glsl_str`
   (the string macro version).
+
+To debug-log the generated shaders, pass a stream to 'debug_out'.
 "
-function bp_glsl_str(src::AbstractString, ::Val{GenerateCode} = Val(false)) where {GenerateCode}
+function bp_glsl_str(src::AbstractString, ::Val{GenerateCode} = Val(false)
+                     ; debug_out::Optional{IO} = nothing
+                    ) where {GenerateCode}
     # Define info about the different pieces of the shader.
     separators = Dict(
         :vert => ("#START_VERTEX", findfirst("#START_VERTEX", src)),
@@ -972,6 +976,21 @@ function bp_glsl_str(src::AbstractString, ::Val{GenerateCode} = Val(false)) wher
                       string("#define IN_COMPUTE_SHADER\n", src_header,
                              gen_line_command(first(compute_range)),
                              src[compute_range])
+
+    if exists(debug_out)
+        if exists(src_vertex)
+            print(debug_out, "//START_VERTEX\n", src_vertex, "\n\n\n")
+        end
+        if exists(src_geom)
+            print(debug_out, "//START_GEOM\n", src_geom, "\n\n\n")
+        end
+        if exists(src_fragment)
+            print(debug_out, "//START_FRAGMENT\n", src_fragment, "\n\n\n")
+        end
+        if exists(src_compute)
+            print(debug_out, "//START_COMPUTE\n", src_compute, "\n\n\n")
+        end
+    end
 
     if GenerateCode
         prog_type = Program

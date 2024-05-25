@@ -26,6 +26,17 @@ block_mode(a::AbstractOglBlock) = block_mode(typeof(a))
 block_mode(::Type{<:OglBlock_std140}) = OglBlock_std140
 block_mode(::Type{<:OglBlock_std430}) = OglBlock_std430
 
+"Create a buffer given a single instance of an `@std140` or `@std430` struct"
+Buffer( can_change_data_from_cpu::Bool,
+        initial_data::AbstractOglBlock
+        ;
+        recommend_storage_on_cpu::Bool = false
+      )::Buffer where {T} = Buffer(
+    can_change_data_from_cpu,
+    Ref(initial_data)
+    ; recommend_storage_on_cpu=recommend_storage_on_cpu
+)
+
 
 #  Interface:  #
 
@@ -57,43 +68,23 @@ block_property_types(b::AbstractOglBlock) = block_property_types(typeof(b))
 block_property_types(T::Type{<:AbstractOglBlock}) = error(T, " didn't implement ", block_property_types)
 
 
-"Parameters for a declaration of an OpenGL block"
-@kwdef struct GLSLBlockDecl
-    # Optional name that the block's fields will be nested within for GLSL code.
-    glsl_name::Optional{AbstractString} = nothing
-    # The official name of the block, outside of GLSL code (which use 'glsl_name').
-    open_gl_name::AbstractString
-
-    # The type of block. Usually "uniform" or "buffer".
-    type::AbstractString
-
-    # Extra arguments to the "layout(...)" section.
-    layout_qualifiers::AbstractString = ""
-    # Optional final block element representing a dynamically-sized array.
-    final_array_field::Optional{AbstractString} = nothing
-
-    # Maps nested structs to their corresponding name in GLSL.
-    # If a type isn't in this lookup, its Julia name is carried into GLSL.
-    type_names::Dict{Type, String} = Dict{Type, String}()
-end
-
-"Gets a GLSL string declaring the given block type"
-glsl_decl(b::AbstractOglBlock, params::GLSLBlockDecl = GLSLBlockDecl()) = glsl_decl(typeof(b), params)
-glsl_decl(T::Type{<:AbstractOglBlock}, params::GLSLBlockDecl = GLSLBlockDecl()) = begin
-    layout_std = if T <: OglBlock_std140
-                     "std140"
-                 elseif T <: OglBlock_std430
-                     "std430"
-                 else
-                     error("Unknown subtype: ", T)
-                 end
-    return "layout($layout_std, $(params.layout_qualifiers)) $(params.type) $(params.open_gl_name)
-    {
-        $((
-            "$(glsl_type_decl(block_property_type(T, f), string(f), params.type_names)) $f;"
-                for f in propertynames(T)
-        )...)
-    } $(exists(params.glsl_name) ? params.glsl_name : "") ;"
+"
+Emits declarations of the fields of an OpenGL struct or block,
+    based on the Julia struct you created with `@std140` or `@std430`
+"
+function glsl_decl(T::Type{<:AbstractOglBlock},
+                   glsl_type_names::Dict{Type, String} = Dict{Type, String}()
+                   ; separator::String = "\n\t"
+                  )::String
+    @bp_check(!isabstracttype(T),     T, " is abstract")
+    return sprint() do io
+        for (i, (name, type)) in enumerate(zip(propertynames(T), block_property_types(T)))
+            if i > 1
+                print(io, "\n", separator)
+            end
+            print(io, glsl_type_decl(type, string(name), glsl_type_names), ";")
+        end
+    end
 end
 
 
@@ -132,22 +123,33 @@ get_buffer_data(buf::Buffer, Block::Type{<:AbstractOglBlock}, first_buffer_byte:
     )
 )
 
-glsl_type_decl(::Type{Bool}, name::String, struct_lookup::Dict{Type, String}) = "bool $name;"
-glsl_type_decl(::Type{Int32}, name::String, struct_lookup::Dict{Type, String}) = "int $name;"
-glsl_type_decl(::Type{Int64}, name::String, struct_lookup::Dict{Type, String}) = "int64 $name;"
-glsl_type_decl(::Type{UInt32}, name::String, struct_lookup::Dict{Type, String}) = "uint $name;"
-glsl_type_decl(::Type{UInt64}, name::String, struct_lookup::Dict{Type, String}) = "uint64 $name;"
-glsl_type_decl(::Type{Float32}, name::String, struct_lookup::Dict{Type, String}) = "float $name;"
-glsl_type_decl(::Type{Float64}, name::String, struct_lookup::Dict{Type, String}) = "double $name;"
-glsl_type_decl(::Type{Vec{N, Bool}}, name::String, struct_lookup::Dict{Type, String}) where {N} = "bvec$N $name;"
-glsl_type_decl(::Type{Vec{N, Int32}}, name::String, struct_lookup::Dict{Type, String}) where {N} = "ivec$N $name;"
-glsl_type_decl(::Type{Vec{N, UInt32}}, name::String, struct_lookup::Dict{Type, String}) where {N} = "uvec$N $name;"
-glsl_type_decl(::Type{Vec{N, Float32}}, name::String, struct_lookup::Dict{Type, String}) where {N} = "vec$N $name;"
-glsl_type_decl(::Type{Vec{N, Float64}}, name::String, struct_lookup::Dict{Type, String}) where {N} = "dvec$N $name;"
-glsl_type_decl(::Type{<:Mat{C, R, Float32}}, name::String, struct_lookup::Dict{Type, String}) where {C, R} = "mat$Cx$R $name;"
-glsl_type_decl(::Type{<:Mat{C, R, Float64}}, name::String, struct_lookup::Dict{Type, String}) where {C, R} = "dmat$Cx$R $name;"
-glsl_type_decl(T::Type{<:AbstractOglBlock}, name::String, struct_lookup::Dict{Type, String}) = get(struct_lookup, T, string(T))
-glsl_type_decl(::Type{StaticBlockArray{N, T}}, name::String, struct_lookup::Dict{Type, String}) where {N, T} = "$(glsl_type_decl(T, struct_lookup)) $name[$N]"
+glsl_type_decl(T::Type                        , name, struct_lookup::Dict{Type, String})              = "$(glsl_type_decl(T, struct_lookup)) $name"
+glsl_type_decl( ::Type{StaticBlockArray{N, T}}, name, struct_lookup::Dict{Type, String}) where {N, T} = "$(glsl_type_decl(T, struct_lookup)) $name[$N]"
+
+glsl_type_decl(::Type{Bool}, struct_lookup::Dict{Type, String}) = "bool"
+glsl_type_decl(::Type{Int32}, struct_lookup::Dict{Type, String}) = "int"
+glsl_type_decl(::Type{Int64}, struct_lookup::Dict{Type, String}) = "int64"
+glsl_type_decl(::Type{UInt32}, struct_lookup::Dict{Type, String}) = "uint"
+glsl_type_decl(::Type{UInt64}, struct_lookup::Dict{Type, String}) = "uint64"
+glsl_type_decl(::Type{Float32}, struct_lookup::Dict{Type, String}) = "float"
+glsl_type_decl(::Type{Float64}, struct_lookup::Dict{Type, String}) = "double"
+glsl_type_decl(::Type{Vec{N, Bool}}, struct_lookup::Dict{Type, String}) where {N} = "bvec$N"
+glsl_type_decl(::Type{Vec{N, Int32}}, struct_lookup::Dict{Type, String}) where {N} = "ivec$N"
+glsl_type_decl(::Type{Vec{N, UInt32}}, struct_lookup::Dict{Type, String}) where {N} = "uvec$N"
+glsl_type_decl(::Type{Vec{N, Float32}}, struct_lookup::Dict{Type, String}) where {N} = "vec$N"
+glsl_type_decl(::Type{Vec{N, Float64}}, struct_lookup::Dict{Type, String}) where {N} = "dvec$N"
+glsl_type_decl(::Type{<:Mat{C, R, Float32}}, struct_lookup::Dict{Type, String}) where {C, R} = "mat$(C)x$(R)"
+glsl_type_decl(::Type{<:Mat{C, R, Float64}}, struct_lookup::Dict{Type, String}) where {C, R} = "dmat$(C)x$(R)"
+glsl_type_decl(T::Type{<:AbstractOglBlock}, struct_lookup::Dict{Type, String}) = get(struct_lookup, T,
+    # Stripping the module path from the type name is tricky.
+    if T isa UnionAll
+        string(T.body.name.name)
+    elseif T isa DataType
+        string(T.name.name)
+    else
+        error("Unexpected: ", typeof(T))
+    end
+)
 
 
 const BLOCK_DEFAULT_BYTE::UInt8 = 0xAA
@@ -180,10 +182,16 @@ end
 
 # Equality and hashing:
 block_generic_type(a::AbstractOglBlock)::UnionAll = error()
-Base.:(==)(a::AbstractOglBlock, b::AbstractOglBlock) =
-    (block_generic_type(typeof(a)) == block_generic_type(typeof(b))) &&
-    (block_byte_array(a) == block_byte_array(b))
-Base.hash(a::AbstractOglBlock, h::UInt)::UInt = hash(block_byte_array(a))
+function Base.:(==)(a::AbstractOglBlock, b::AbstractOglBlock)::Bool
+    if block_generic_type(typeof(a)) != block_generic_type(typeof(b))
+        return false
+    end
+    values_a = getproperty.(Ref(a), propertynames(typeof(a)))
+    values_b = getproperty.(Ref(b), propertynames(typeof(b)))
+    comparisons = values_a .== values_b
+    return all(comparisons)
+end
+Base.hash(a::AbstractOglBlock, h::UInt)::UInt = hash(getproperty.(Ref(a), propertynames(typeof(a))))
 
 function Base.show(io::IO, a::AbstractOglBlock)
     print(io, Base.typename(typeof(a)).name, '(')
