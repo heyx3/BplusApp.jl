@@ -3,17 +3,19 @@
 @std140 struct A
     f::Float32 # 1-4
     b::Bool # 5-8
+    # Pad 9-16
     vf::v3f # 17 - 28
     i::Int32 # 29 - 32
     vi::v2i # 33 - 40
     # Pad 41-48
-    bs::NTuple{25, Bool} # 49 - 448
+    bs::StaticBlockArray{25, Bool} # 49 - 448
     m::@Mat(3, 2, Float64) # 449 - 496
     # Struct alignment: 16
 end
 
-# For debugging, make a very clear print() for A.
-function Base.print(io::IO, a::A; indentation="")
+# For debugging, make a very clear to-string function for A.
+# show() is tested and should not be changed.
+function pretty_print(io::IO, a::A; indentation="")
     println(io, "A(")
         println(io, indentation, "\tf  = ", a.f)
         println(io, indentation, "\tb  = ", a.b)
@@ -29,10 +31,11 @@ end
 @bp_test_no_allocations(block_byte_size(A),
                         496,
                         "Struct 'A' in std140 layout is ", block_byte_size(A), " bytes")
-@bp_test_no_allocations(propertynames(A), (:f, :b, :vf, :i, :vi, :bs, :m))
-@bp_test_no_allocations(block_property_types(A), (Float32, Bool, v3f, Int32, v2i, NTuple{25, Bool}, @Mat(3, 2, Float64)))
+@bp_test_no_allocations(block_alignment(A), 16)
+@bp_test_no_allocations(block_padding_size(A), 16, "Struct 'A' in std140 layout")
 function check_A_field(name::Symbol, type::Type, first_byte::Int)
-    @bp_test_no_allocations(block_property_type(A, Val(name)), type, "Type of A's field '$name'")
+    @bp_test_no_allocations(type <: block_property_type(A, Val(name)), true,
+                            "Type of A's field '$name' should be $type but was $(block_property_type(A, Val(name)))")
     @bp_test_no_allocations(BplusApp.GL.block_property_first_byte(A, Val(name)), first_byte,
                             "First byte of A's field '$name'")
 end
@@ -41,14 +44,16 @@ check_A_field(:b, Bool, 5)
 check_A_field(:vf, v3f, 17)
 check_A_field(:i, Int32, 29)
 check_A_field(:vi, v2i, 33)
-check_A_field(:bs, NTuple{25, Bool}, 49)
+check_A_field(:bs, StaticBlockArray{25, Bool, BplusApp.GL.OglBlock_std140}, 49)
 check_A_field(:m, @Mat(3, 2, Float64), 449)
+@bp_test_no_allocations(propertynames(A), (:f, :b, :vf, :i, :vi, :bs, :m))
+@bp_test_no_allocations(block_property_types(A), (Float32, Bool, v3f, Int32, v2i, StaticBlockArray{25, Bool}, @Mat(3, 2, Float64)))
 const A1_ARRAY = [(i%3)==0 for i in 1:25]
 a1_args() = (@f32(1.4), true, v3f(4.4, 5.5, 6.6), 4, v2i(-3, -200),
              A1_ARRAY,
              @Mat(3, 2, Float64)(1, 2, 3, 4, 5, 6))
 make_a_1() = A(a1_args()...)
-@bp_test_no_allocations(typeof(make_a_1()), A{Vector{UInt8}})
+@bp_check(make_a_1() isa A{Vector{UInt8}})
 @bp_test_no_allocations(getproperty.(Ref(make_a_1()), propertynames(A)),
                         a1_args())
 let sprinted = sprint(show, make_a_1()),
@@ -56,172 +61,113 @@ let sprinted = sprint(show, make_a_1()),
   @bp_check(sprinted == "A($(join(sprinted_args, ", ")))",
             "Actual value: ", sprinted, "\n")
 end
-@bp_test_no_allocations(block_alignment(A), 16)
-#TODO: Test padding byte count
-#TODO: Test bool array
-#TODO: Test matrix
 
-
+# This struct has only 3 floats, so it should have 12 bytes (padded to 16) and 16-byte alignment.
 @std140 struct B
-    a::A # 32B
-    m::fmat4 # 64B = 96
-    i::Int32 # 4B = 100
-    # Pad 12B to align with dvec2 (16B): 112
-    d::dmat3x2 # 48B = 160
-    bs::NTuple{6, Bool} # 96B = 256
-    backup_as::NTuple{10, A} # 320B = 576
+    f1::Float32
+    f2::Float32
+    f3::Float32
+end
+@bp_test_no_allocations(block_byte_size(B), 16, "@std140 struct B")
+@bp_test_no_allocations(block_padding_size(B), 4, "@std140 struct B")
+@bp_test_no_allocations(block_alignment(B), 16, "@std140 struct B")
+function check_B_field(name::Symbol, type::Type, first_byte::Int)
+    @bp_test_no_allocations(block_property_type(B, Val(name)), type, "Type of B's field '$name'")
+    @bp_test_no_allocations(BplusApp.GL.block_property_first_byte(B, Val(name)), first_byte,
+                            "First byte of B's field '$name'")
+end
+check_B_field(:f1, Float32, 1)
+check_B_field(:f2, Float32, 5)
+check_B_field(:f3, Float32, 9)
+@bp_test_no_allocations(propertynames(B), (:f1, :f2, :f3))
+@bp_test_no_allocations(block_property_types(B), (Float32, Float32, Float32))
+const TEST_B_ARGS = Float32.((1, 2, 3))
+const TEST_B = B(1, 2, 3)
+@bp_check(TEST_B isa B{Vector{UInt8}})
+@bp_test_no_allocations(getproperty.(Ref(TEST_B), propertynames(B)),
+                        TEST_B_ARGS)
+let sprinted = sprint(show, TEST_B),
+    sprinted_args = sprint.(Ref(show), TEST_B_ARGS)
+  @bp_check(sprinted == "B($(join(sprinted_args, ", ")))",
+            "Actual value: ", sprinted, "\n")
 end
 
-# For debugging, make a very clear print() for B.
-function Base.print(io::IO, b::B; indentation="")
-    println(io, "B(")
-        print(io, indentation, "\t", "a = ")
-            print(io, b.a; indentation=indentation*"\t")
-            println(io)
-        println(io, indentation, "\t", "m = ", b.m)
-        println(io, indentation, "\t", "i = ", b.i)
-        println(io, indentation, "\t", "d = ", b.d)
-        println(io, indentation, "\t", "bs = [")
-        for bool in b.bs
-            println(io, indentation, "\t\t", bool)
-        end
-        println(io, indentation, "]")
-        println(io, indentation, "\t", "backup_as = [")
-        for a in b.backup_as
-            print(io, indentation, "\t\t")
-            print(io, a; indentation=indentation * "\t\t")
-            println(io)
-        end
-        println(io, indentation, "]")
-    print(io, indentation, ")")
-end
 
-# Test struct B:
-@bp_test_no_allocations(sizeof(B), 576)
-@bp_test_no_allocations(propertynames(B), (:a, :m, :i, :d, :bs, :backup_as),
-                        propertynames(B))
-@bp_test_no_allocations(BplusApp.GL.property_types(B), (A, fmat4, Int32, dmat3x2, NTuple{6, Bool}, NTuple{10, A}))
-Random.rand(::Type{A})::A = A(rand(Float32), rand(Bool), rand(v4f))
-Random.seed!(0x57483829)
-let in_data = (
-                   rand(A),
-                   fmat4(4.1, 4.2, 4.3, 4.4,
-                         4.5, 4.6, 4.7, 4.8,
-                         4.9, 4.01, 4.02, 4.03,
-                         4.04, 4.05, 4.06, 4.07),
-                   Int32(-666),
-                   dmat3x2(7.7, 7.8, 7.9,
-                           8.7, 8.8, 8.9),
-                   ntuple(i -> rand(Bool), 6),
-                   ntuple(i -> rand(A), 10)
-              ),
-    make_b = () -> B(in_data...)
-    @bp_test_no_allocations(make_b(), make_b(),
-                            "Constructor should create an equal value without allocation")
-    let b = Ref(make_b())
-        @bp_test_no_allocations(getproperty.(b, propertynames(B)),
-                                in_data,
-                                "Reading all properties: ",
-                                    getproperty.(b, propertynames(B)))
-    end
-end
-function check_B_field(name::Symbol, type::Type, offset::Int)
-    @bp_test_no_allocations(BplusApp.GL.property_type(B, name), type,
-                            "Field B.", name)
-    @bp_test_no_allocations(BplusApp.GL.property_offset(B, name), offset,
-                            "Field B.", name)
-end
-check_B_field(:m, fmat4, 32)
-check_B_field(:d, dmat3x2, 112)
-check_B_field(:bs, NTuple{6, Bool}, 160)
-check_B_field(:backup_as, NTuple{10, A}, 256)
-@bp_test_no_allocations(BplusApp.GL.block_alignment(B), 16)
-
-
+# C tests nested structs and some other types.
 @std140 struct C
-    bool_vec::Vec{2, Bool} # 8B
-    # Pad 8B to align with struct B (16B): 16
-    b::B # 576B = 592
-    f1::Float32 # 596
-    # Pad 12B to align with v4f: 608
-    array1::NTuple{10, Vec{2, Bool}} # alignment is v4f
-                                     # 160B = 768
-    array2::NTuple{5, fmat3x2} # alignment is v2f => v4f
-                               # element stride is v4f*3 = 48
-                               # 240B = 1008
-    # No padding needed to align with 16B base alignment
+    b::B # 1-16
+    as::StaticBlockArray{3, A} # 17 - 1504
+    f::Float32 # 1505 - 1508
+    # Pad 12 bytes, 1509 - 1520
+    bs::StaticBlockArray{500, B} # 1521 - 9520
+    a::A # 9521 - 10016
+    m64::@Mat(4, 3, Float64) # v3d, size 24, alignment 32
+                             # Total size 128
+                             # 10017 - 10144
+    m32s::StaticBlockArray{11, @Mat(2, 4, Float32)} # v4f, size 16, alignment 16
+                                                    # Total size 22*16=352
+                                                    # 10145 - 10496
+    # Struct alignment: 32
 end
-
-# For debugging, make a very clear print() for C.
-function Base.print(io::IO, c::C; indentation="")
-    println(io, "C(")
-        println(io, indentation, "\t", "bool_vec = ", c.bool_vec)
-        print(io, indentation, "\t", "b = ")
-            print(io, c.b; indentation=indentation*"\t")
-            println(io)
-        println(io, indentation, "\t", "f1 = ", c.f1)
-        println(io, indentation, "\t", "array1 = [")
-        for v in c.array1
-            println(io, indentation, "\t\t", v)
-        end
-        println(io, indentation, "]")
-        println(io, indentation, "\t", "array2 = [")
-        for m in c.array2
-            println(io, indentation, "\t\t", m)
-        end
-        println(io, indentation, "]")
-    print(io, indentation, ")")
+@bp_test_no_allocations(block_byte_size(C), 10496)
+@bp_test_no_allocations(block_padding_size(C), 12)
+@bp_test_no_allocations(block_alignment(C), 32)
+function check_C_field(name::Symbol, type::Type, first_byte::Int)
+    @bp_test_no_allocations(type <: block_property_type(C, Val(name)), true,
+                            "Type of C's field '$name' should be $type but was $(block_property_type(C, Val(name)))")
+    @bp_test_no_allocations(BplusApp.GL.block_property_first_byte(C, Val(name)), first_byte,
+                            "First byte of C's field '$name'")
 end
-
-# Test struct C:
-@bp_test_no_allocations(sizeof(C), 1008)
-@bp_test_no_allocations(propertynames(C), (:bool_vec, :b, :f1, :array1, :array2))
-@bp_test_no_allocations(BplusApp.GL.property_types(C), (Vec{2, Bool}, B, Float32, NTuple{10, Vec{2, Bool}}, NTuple{5, fmat3x2}))
-Random.rand(::Type{B})::B = B(
-    rand(A),
-    rand(fmat4),
-    rand(Int32),
-    rand(dmat3x2),
-    ntuple(i -> rand(Bool), 6),
-    ntuple(i -> rand(A), 10)
+check_C_field(:b, B, 1)
+check_C_field(:as, StaticBlockArray{3, A, BplusApp.GL.OglBlock_std140}, 17)
+check_C_field(:f, Float32, 1505)
+check_C_field(:bs, StaticBlockArray{500, B, BplusApp.GL.OglBlock_std140}, 1521)
+check_C_field(:a, A, 9521)
+check_C_field(:m64, dmat4x3, 10017)
+check_C_field(:m32s, StaticBlockArray{11, fmat2x4, BplusApp.GL.OglBlock_std140}, 10145)
+@bp_test_no_allocations(propertynames(C), (:b, :as, :f, :bs, :a, :m64, :m32s))
+@bp_test_no_allocations(block_property_types(C), (B, StaticBlockArray{3, A}, Float32, StaticBlockArray{500, B}, A, dmat4x3, StaticBlockArray{11, fmat2x4}))
+const TEST_C_ARGS = (
+    B(3, 4, 5),
+    [A(
+        i*0.5f0,
+        (i%5)==0,
+        v3f(i/2.0f0, i*30.0f0, -i),
+        -i*10,
+        v2i(i, i+1),
+        [((j*i)%4)==0 for j in 1:25],
+        dmat3x2(i-1, i-2, i-3, i-4, i-5, i-6)
+    ) for i in 1:3],
+    20.02f0,
+    [B(i * -3.4, i, i + 7.53) for i in 1:500],
+    A(
+        23.231f0,
+        false,
+        v3f(10, 22, 13),
+        111111,
+        v2u(899, 888),
+        [((i%10) == 1) for i in 1:25],
+        dmat3x2(
+            81, 82, 83,
+            944, 05, 96
+        )
+    ),
+    dmat4x3(
+        111, 112, 113, 114,
+        222, 223, 224, 225,
+        335, 366, 454, 666
+    ),
+    [fmat2x4(i-10, i-100, i-1000, i-10000, i+11, i+111, i+1111, i+11111) for i in 1:11]
 )
-Random.seed!(0xbafacada)
-let in_data = (
-                  v2b(false, true),
-                  rand(B),
-                  -1.2f0,
-                  ntuple(i -> Vec(rand(Bool), rand(Bool)),
-                         Val(10)),
-                  ntuple(i -> rand(fmat3x2), Val(5))
-              )
-    make_c = () -> C(in_data...)
-    @bp_test_no_allocations(make_c(), make_c(),
-                            "Constructor should create an equal value without allocation")
-    let c = Ref(make_c())
-        get_props = () -> getproperty.(c, propertynames(C))
-        for (prop, expected) in zip(propertynames(C), in_data)
-            @bp_check(getproperty(c[], prop) == expected,
-                      "Property ", prop, " should be:\n\t",
-                        expected, "\n",
-                      " but was:\n\t", getproperty(c[], prop))
-        end
-        @bp_test_no_allocations(typeof.(get_props()), typeof.(in_data),
-                                "Property types")
-        @bp_test_no_allocations(get_props(), in_data,
-                                "Property values")
-    end
+const TEST_C = C(TEST_C_ARGS...)
+@bp_check(TEST_C isa C{Vector{UInt8}})
+for (f, T, expected, actual) in zip(propertynames(C), block_property_types(C), TEST_C_ARGS, getproperty.(Ref(TEST_C), propertynames(C)))
+    @bp_check(expected == actual,
+              "C.", f, "::", T, " should be:\n", expected, "\n\n  but is\n", actual)
 end
-@inline function check_C_field(name::Symbol, type::Type, offset::Int)
-    @bp_test_no_allocations(BplusApp.GL.property_type(C, name), type,
-                            "Property C.", name)
-    @bp_test_no_allocations(BplusApp.GL.property_offset(C, name), offset,
-                            "Property C.", name)
-end
-check_C_field(:bool_vec, Vec{2, Bool}, 0)
-check_C_field(:b, B, 16)
-check_C_field(:f1, Float32, 592)
-check_C_field(:array1, NTuple{10, Vec{2, Bool}}, 608)
-check_C_field(:array2, NTuple{5, fmat3x2}, 768)
-@bp_test_no_allocations(BplusApp.GL.block_alignment(C), 16)
+@bp_test_no_allocations(getproperty.(Ref(TEST_C), propertynames(C)),
+                        TEST_C_ARGS)
+# Testing show() on a struct this big is impractical.
 
-#TODO: Test BplusApp.GL.glsl_decl() in both std140 and std430
+
+#TODO: Compute shader to test the GLSL decl and layout are correct

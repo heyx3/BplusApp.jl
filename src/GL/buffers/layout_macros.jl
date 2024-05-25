@@ -9,9 +9,9 @@ While the structs themselves are immutable, they are backed by a mutable array
     so you can set their properties.
 
 To pass it into a C function, wrap it with a `Ref()` call.
-To create an array of your block type `T`, construct `BlockArray` with either
-    `BlockArray{T}(bytes::AbstractVector{UInt8})` or
-    `BlockArray{T}(count::Int)`.
+To create an array of your block type `T`, construct `StaticBlockArray` with either
+    `StaticBlockArray{T}(bytes::AbstractVector{UInt8})` or
+    `StaticBlockArray{N, T}()`.
 
 For simplicity, the buffer's bytes will always be filled with 0xAA by default,
     and the `==` operator is defined to do fast bytewise comparison.
@@ -47,23 +47,12 @@ const BUFFER_FIELD_NAME = Symbol("raw byte buffer")
 "Gets the bytes of a block, as a mutable array of `UInt8`"
 block_byte_array(b::AbstractOglBlock)::AbstractVector{UInt8} = getfield(b, BUFFER_FIELD_NAME)
 
-"
-Returns the type of an `AbstractOglBlock`'s property.
-
-NOTE: Static array properties will return `NTuple{N, T}` here,
-  but the actual type of those properties is `BlockArray{T}`.
-This is different from the behavior of `block_property_types()`.
-"
+"Returns the type of an `AbstractOglBlock`'s property"
 @inline block_property_type(b::AbstractOglBlock, name::Symbol) = block_property_type(typeof(b), Val(name))
 @inline block_property_type(T::Type{<:AbstractOglBlock}, name::Symbol) = block_property_type(T, Val(name))
 @inline block_property_type(T::Type{<:AbstractOglBlock}, Name::Val) = error(T, " has no property '", val_type(Name))
 
-"
-Returns a tuple of the type for each named property from `Base.propertynames`.
-
-NOTE: Unlike `block_property_type()`, this function returns the true type of static arrays
-    (`BlockArray{T}`, not `NTuple{N, T}`).
-"
+"Returns a tuple of the type for each named property from `Base.propertynames`"
 block_property_types(b::AbstractOglBlock) = block_property_types(typeof(b))
 block_property_types(T::Type{<:AbstractOglBlock}) = error(T, " didn't implement ", block_property_types)
 
@@ -108,6 +97,17 @@ glsl_decl(T::Type{<:AbstractOglBlock}, params::GLSLBlockDecl = GLSLBlockDecl()) 
 end
 
 
+"
+A facade for a mutable array of items within an `AbstractOglBlock`.
+"
+abstract type BlockArray{T, TMode<:AbstractOglBlock, TByteArray<:AbstractVector{UInt8}} <: AbstractVector{T} end
+
+"A facade for a mutable array of items within an `AbstractOglBlock`, of static size"
+struct StaticBlockArray{N, T, TMode<:AbstractOglBlock, TByteArray<:AbstractVector{UInt8}} <: BlockArray{T, TMode, TByteArray}
+    buffer::TByteArray # Use same field name as the blocks themselves, for convenience
+end
+
+
 #  Internals:  #
 
 # Provide simplified overloads of `set_buffer_data()` and `get_buffer_data()` for block structs.
@@ -147,7 +147,7 @@ glsl_type_decl(::Type{Vec{N, Float64}}, name::String, struct_lookup::Dict{Type, 
 glsl_type_decl(::Type{<:Mat{C, R, Float32}}, name::String, struct_lookup::Dict{Type, String}) where {C, R} = "mat$Cx$R $name;"
 glsl_type_decl(::Type{<:Mat{C, R, Float64}}, name::String, struct_lookup::Dict{Type, String}) where {C, R} = "dmat$Cx$R $name;"
 glsl_type_decl(T::Type{<:AbstractOglBlock}, name::String, struct_lookup::Dict{Type, String}) = get(struct_lookup, T, string(T))
-glsl_type_decl(::Type{NTuple{N, T}}, name::String, struct_lookup::Dict{Type, String}) where {N, T} = "$(glsl_type_decl(T, struct_lookup)) $name[$N]"
+glsl_type_decl(::Type{StaticBlockArray{N, T}}, name::String, struct_lookup::Dict{Type, String}) where {N, T} = "$(glsl_type_decl(T, struct_lookup)) $name[$N]"
 
 
 const BLOCK_DEFAULT_BYTE::UInt8 = 0xAA
@@ -178,7 +178,11 @@ end
     )
 end
 
-Base.:(==)(a::T, b::T) where {T<:AbstractOglBlock} = block_byte_array(a) == block_byte_array(b)
+# Equality and hashing:
+block_generic_type(a::AbstractOglBlock)::UnionAll = error()
+Base.:(==)(a::AbstractOglBlock, b::AbstractOglBlock) =
+    (block_generic_type(typeof(a)) == block_generic_type(typeof(b))) &&
+    (block_byte_array(a) == block_byte_array(b))
 Base.hash(a::AbstractOglBlock, h::UInt)::UInt = hash(block_byte_array(a))
 
 function Base.show(io::IO, a::AbstractOglBlock)
@@ -196,26 +200,9 @@ end
 
 #  Block Arrays:  #
 
-#TODO: AbstractBlockArray, StaticBlockArray, DynamicBlockArray
+# (types defined above out of necessity)
 
-"
-A facade for a mutable array of items within an `AbstractOglBlock`.
-
-The size is not specified at compile-time,
-    because some GPU arrays can be sized dynamically (ones that sit at the tail end of the buffer memory).
-"
-struct BlockArray{T, TMode<:AbstractOglBlock, TArray<:AbstractVector{UInt8}} <: AbstractVector{T}
-    buffer::TArray # Use same field name as the blocks themselves, for convenience
-end
-
-"Constructs the block-array with an existing byte array"
-BlockArray{T       }(a::AbstractVector{UInt8}) where {T<:AbstractOglBlock} = BlockArray{T, block_mode(T), typeof(a)}(a)
-BlockArray{T, TMode}(a::AbstractVector{UInt8}) where {T, TMode           } = BlockArray{T, TMode        , typeof(a)}(a)
-"Constructs the block-array with an element count"
-BlockArray{T       }(count::Int) where {T<:AbstractOglBlock} = BlockArray{T, block_mode(T), Vector{UInt8}}(fill(BLOCK_DEFAULT_BYTE, block_array_element_stride(T, block_mode(T)) * count))
-BlockArray{T, TMode}(count::Int) where {T, TMode           } = BlockArray{T, TMode        , Vector{UInt8}}(fill(BLOCK_DEFAULT_BYTE, block_array_element_stride(T, TMode        ) * count))
-
-"Returns the array's associated OglBlock type, OglBlock_std140 or OglBlock_std430"
+"Returns the array's associated OglBlock type, OglBlock_std140 or OglBlock_std430" penis
 block_array_mode(::BlockArray{T, TMode}) where {T, TMode} = TMode
 
 # AbstractVector stuff:
@@ -231,7 +218,6 @@ end
 Base.Ref(a::BlockArray{T}, i::Integer = 1) where {T} = Ref(block_byte_array(a), i * block_array_element_stride(T, block_array_mode(a)))
 @inline Base.getindex(a::BlockArray, i::Integer) = block_index_get(a, i, eltype(a))
 @inline Base.setindex!(a::BlockArray, v, i::Integer) = block_index_set(a, i, eltype(a), v)
-println("#TODO: Slicing BlockArray")
 
 "Gets the mutable byte array underlying this array"
 block_byte_array(b::BlockArray)::AbstractVector{UInt8} = getfield(b, :buffer)
@@ -240,10 +226,28 @@ block_byte_array(b::BlockArray)::AbstractVector{UInt8} = getfield(b, :buffer)
 Base.Ref(a::BlockArray, i) = Ref(block_byte_array(a), i)
 
 
+
+"Constructs the block-array with an existing byte array"
+StaticBlockArray{N, T       }(a::AbstractVector{UInt8}) where {N, T<:AbstractOglBlock} = begin
+    byte_stride = block_array_element_stride(T, block_mode(T))
+    @bp_check(length(a) ÷ byte_stride == N,
+              "Should have provided ", byte_stride * N, " bytes but provided ", length(a))
+    StaticBlockArray{N, T, block_mode(T), typeof(a)}(a)
+end
+StaticBlockArray{N, T, TMode}(a::AbstractVector{UInt8}) where {N, T, TMode           } = begin
+    byte_stride = block_array_element_stride(T, TMode)
+    @bp_check(length(a) ÷ byte_stride == N,
+              "Should have provided ", byte_stride * N, " bytes but provided ", length(a))
+    StaticBlockArray{N, T, TMode        , typeof(a)}(a)
+end
+"Constructs the block-array with an element count"
+StaticBlockArray{N, T       }() where {N, T<:AbstractOglBlock} = StaticBlockArray{N, T, block_mode(T), Vector{UInt8}}(fill(BLOCK_DEFAULT_BYTE, block_array_element_stride(T, block_mode(T)) * N))
+StaticBlockArray{N, T, TMode}() where {N, T, TMode           } = StaticBlockArray{N, T, TMode        , Vector{UInt8}}(fill(BLOCK_DEFAULT_BYTE, block_array_element_stride(T, TMode        ) * N))
+
+
 #  Property/element getters and setters:  #
 
 # Block properties each have a type and a byte offset in the larger buffer.
-# Array properties (like `float myFloats[3]`) are represented by the type `NTuple`.
 block_property_type(block_type, Name)::Type = error(block_type, " has no property '", val_type(Name), "'")
 block_property_first_byte(block_type, Name)::Int = error(block_type, " has no property '", val_type(Name), "'")
 # Add helpful error messages for specific cases.
@@ -337,19 +341,19 @@ block_index_set(block, i, TReturn, value) = error(typeof(block), " cannot be ind
 
 # Matrix properties are stored in columns, like an array of vectors.
 function block_property_get(a::AbstractOglBlock, Name::Val, ::Type{<:Mat{C, R, F}}) where {C, R, F}
-    arr = block_property_get(a, Name, NTuple{C, Vec{R, F}})
+    arr = block_property_get(a, Name, StaticBlockArray{C, Vec{R, F}})
     elements_by_column  = Iterators.flatten(arr)
     return @Mat(C, R, F)(elements_by_column...)
 end
 function block_property_set(a::AbstractOglBlock, Name::Val, ::Type{<:Mat{C, R, F}}, value) where {C, R, F}
-    arr = block_property_get(a, Name, NTuple{C, Vec{R, F}})
+    arr = block_property_get(a, Name, StaticBlockArray{C, Vec{R, F}})
     for col in 1:C
         arr[col] = convert(Vec{R, F}, value[:, col])
     end
 end
 function block_index_get(a::BlockArray, i::Integer, T::Type{<:Mat{C, R, F}}) where {C, R, F}
     a_view = @view block_byte_array(a)[block_array_byte_range(T, block_array_mode(a), i)]
-    arr = BlockArray{Vec{R, F}, block_array_mode(a)}(a_view)
+    arr = StaticBlockArray{C, Vec{R, F}, block_array_mode(a)}(a_view)
 
     column_vectors = Iterators.flatten(arr)
     elements_by_column = Iterators.flatten(column_vectors)
@@ -357,7 +361,7 @@ function block_index_get(a::BlockArray, i::Integer, T::Type{<:Mat{C, R, F}}) whe
 end
 function block_index_set(a::BlockArray, i::Integer, T::Type{<:Mat{C, R, F}}, value) where {C, R, F}
     a_view = @view block_byte_array(a)[block_array_byte_range(T, block_array_mode(a), i)]
-    arr = BlockArray{Vec{R, F}, block_array_mode(a)}(a_view)
+    arr = StaticBlockArray{C, Vec{R, F}, block_array_mode(a)}(a_view)
 
     for col in 1:C
         arr[col] = convert(Vec{R, F}, value[:, col])
@@ -365,19 +369,19 @@ function block_index_set(a::BlockArray, i::Integer, T::Type{<:Mat{C, R, F}}, val
 end
 
 # Implementations of getter/setter for a property that is an array:
-@inline function block_property_get(a::AbstractOglBlock, Name::Val, ::Type{<:NTuple{N, T}}
+@inline function block_property_get(a::AbstractOglBlock, Name::Val, ::Type{<:StaticBlockArray{N, T}}
                                    ) where {N, T}
     byte_range = block_property_byte_range(typeof(a), Name)
     arr = @view(block_byte_array(a)[byte_range])
-    return BlockArray{T, block_mode(a)}(arr)
+    return StaticBlockArray{N, T, block_mode(a)}(arr)
 end
-@inline function block_property_set(a::AbstractOglBlock, Name::Val, ::Type{<:NTuple{N, T}},
+@inline function block_property_set(a::AbstractOglBlock, Name::Val, ::Type{<:StaticBlockArray{N, T}},
                                     values
                                    ) where {N, T}
     @bp_gl_assert(length(values) == N,
                   "Expected to set ", typeof(a), ".", val_type(Name), " to an array of ",
                     N, " elements, but got ", length(values), " elements instead")
-    arr = block_property_get(a, Name, NTuple{N, T})
+    arr = block_property_get(a, Name, StaticBlockArray{N, T})
     # The padding of the input array likely isn't going to line up with the std140 padding,
     #    so we have to set it element-by-element.
     for (i, element) in enumerate(values)
@@ -397,23 +401,21 @@ end
 end
 
 # Implementations of getter/setter for an array element that's an OglBlock:
-@inline function block_index_get(a::BlockArray{T}, i::Integer, ::Type{T}) where {T<:AbstractOglBlock}
-    byte_range = block_array_byte_range(T, block_mode(a), i)
+@inline function block_index_get(a::StaticBlockArray{N, T}, i::Integer, ::Type{T}) where {N, T<:AbstractOglBlock}
+    byte_range = block_array_byte_range(T, block_array_mode(a), i)
     arr = @view block_byte_array(a)[byte_range]
     return T{typeof(arr)}(arr)
 end
-@inline function block_index_set(a::BlockArray{T}, i::Integer, ::Type{T}, value::T) where {T<:AbstractOglBlock}
+@inline function block_index_set(a::StaticBlockArray{N, T}, i::Integer, ::Type{T}, value::T) where {N, T<:AbstractOglBlock}
     b1 = 1 + (i * block_byte_size(T))
     bN = block_byte_size(T)
     bEnd = b1 + bN - 1
-    block_byte_range = block_array_byte_range(T, block_mode(a), i)
+    block_byte_range = block_array_byte_range(T, block_array_mode(a), i)
     block_byte_array(a)[block_byte_range] = block_byte_array(value)
 end
 
 
 #  OpenGL Spec implementation  #
-
-# Note that in this implementation, NTuple is used to represent static arrays.
 
 block_field_alignment()::Int = error("Unimplemented")
 block_field_size()::Int = error("Unimplemented")
@@ -425,9 +427,9 @@ block_array_element_stride()::Int = error("Unimplemented")
 block_field_alignment(T::Type{<:AbstractOglBlock}, mode::Type{<:AbstractOglBlock}) = block_alignment(T)
 # Most scalars/vectors translate to the GPU trivially.
 # However bools are 4 bytes.
-block_field_alignment(T::Type{<:ScalarBits}      , mode::Type{<:AbstractOglBlock}) = sizeof(T)
-block_field_alignment( ::Type{Bool}              , mode::Type{<:AbstractOglBlock}) = sizeof(UInt32)
-block_field_alignment( ::Type{Vec{N, T}}         , mode::Type{<:AbstractOglBlock}) where {N, T} =
+block_field_alignment(T::Type{<:ScalarBits}                , mode::Type{<:AbstractOglBlock}) = sizeof(T)
+block_field_alignment( ::Type{Bool}                        , mode::Type{<:AbstractOglBlock}) = sizeof(UInt32)
+block_field_alignment( ::Type{Vec{N, T}}                   , mode::Type{<:AbstractOglBlock}) where {N, T} =
     if N == 3
         block_field_alignment(Vec{4, T}, mode)
     elseif T == Bool
@@ -437,37 +439,37 @@ block_field_alignment( ::Type{Vec{N, T}}         , mode::Type{<:AbstractOglBlock
     end
 # AbstractOglBlock's are already sized appropriately.
 # Array fields are based on their elements.
-block_field_alignment( ::Type{<:NTuple{N, T}}    , mode::Type{<:AbstractOglBlock}) where {N, T} = block_array_element_alignment(T, mode)
+block_field_alignment( ::Type{<:StaticBlockArray{N, T}}    , mode::Type{<:AbstractOglBlock}) where {N, T} = block_array_element_alignment(T, mode)
 # Matrices are like an array of column vectors.
-block_field_alignment( ::Type{<:Mat{C, R, F}}    , mode::Type{<:AbstractOglBlock}) where {C, R, F} =
-    block_field_alignment(NTuple{C, Vec{R, F}}, mode)
+block_field_alignment( ::Type{<:Mat{C, R, F}}              , mode::Type{<:AbstractOglBlock}) where {C, R, F} =
+    block_field_alignment(StaticBlockArray{C, Vec{R, F}, mode}, mode)
 
-block_field_size(T::Type                         , mode::Type{<:AbstractOglBlock})                 = block_field_alignment(T, mode)
-block_field_size( ::Type{<:Vec{N, T}}            , mode::Type{<:AbstractOglBlock}) where {N, T}    = N * sizeof((T == Bool) ? UInt32 : T)
-block_field_size(T::Type{<:AbstractOglBlock}     , mode::Type{<:AbstractOglBlock})                 = block_byte_size(T)
-block_field_size( ::Type{<:Mat{C, R, F}}         , mode::Type{<:AbstractOglBlock}) where {C, R, F} = block_field_size(NTuple{C, Vec{R, F}}, mode)
-block_field_size( ::Type{<:NTuple{N, T}}         , mode::Type{<:AbstractOglBlock}) where {N, T   } = N * block_field_alignment(NTuple{N, T}, mode)
+block_field_size(T::Type                          , mode::Type{<:AbstractOglBlock})                 = block_field_alignment(T, mode)
+block_field_size( ::Type{<:Vec{N, T}}             , mode::Type{<:AbstractOglBlock}) where {N, T}    = N * sizeof((T == Bool) ? UInt32 : T)
+block_field_size(T::Type{<:AbstractOglBlock}      , mode::Type{<:AbstractOglBlock})                 = block_byte_size(T)
+block_field_size( ::Type{<:Mat{C, R, F}}          , mode::Type{<:AbstractOglBlock}) where {C, R, F} = block_field_size(StaticBlockArray{C, Vec{R, F}, mode}, mode)
+block_field_size( ::Type{<:StaticBlockArray{N, T}}, mode::Type{<:AbstractOglBlock}) where {N, T   } = N * block_array_element_stride(T, mode)
 
 # An array element's alignment is equal to its alignment as a field,
 #    if in std140 then rounded up to a multiple of v4f.
 block_array_element_alignment(T, mode)                        = block_field_alignment(T, mode)
 block_array_element_alignment(T, mode::Type{OglBlock_std140}) = round_up_to_multiple(block_field_alignment(T, mode), sizeof(v4f))
 
-block_array_element_stride(T                          , mode)              = block_array_element_alignment(T, mode)
-block_array_element_stride(T::Type{<:AbstractOglBlock}, mode)              = block_byte_size(T)
-block_array_element_stride(T::Type{<:Mat{C}}          , mode) where {C}    = C * block_array_element_alignment(T, mode)
-block_array_element_stride( ::Type{NTuple{N, T}}      , mode) where {N, T} = N * block_array_element_stride(T, mode)
+block_array_element_stride(T                               , mode)              = block_array_element_alignment(T, mode)
+block_array_element_stride(T::Type{<:AbstractOglBlock}     , mode)              = block_byte_size(T)
+block_array_element_stride(T::Type{<:Mat{C}}               , mode) where {C}    = C * block_array_element_alignment(T, mode)
+block_array_element_stride( ::Type{StaticBlockArray{N, T}} , mode) where {N, T} = N * block_array_element_stride(T, mode)
 
 
 #= A new block struct (call it `s::S`) must implement the following:
     * Base.propertynames(::Type{<:S})
     * block_property_types(::Type{<:S})
+    * block_generic_type(::Type{<:S}) = S
     * block_byte_size(::Type{<:S})
     * block_padding_size(::Type{<:S})
     * block_alignment(::Type{<:S})
     * Per property:
         * block_property_type(::Type{<:S}, ::Val)::Type
-            * Static arrays should return `NTuple{N, T}` instead of `BlockArray{T}`.
         * block_property_first_byte(::Type{<:S}, ::Val)
     * Internal constructor that takes an `AbstractVector{UInt8}`
     * External constructor that takes all the fields and uses a `Vector{UInt8}` buffer initially filled with BLOCK_DEFAULT_BYTE
@@ -490,12 +492,12 @@ Sample usage:
 @std140 struct MyInnerUniformBlock
     f::Float32
     bools::vb4
-    position_array::NTuple{12, v3f}
+    position_array::StaticBlockArray{12, v3f}
 end
 
 @std140 struct MyOuterUniformBlock
     i::Int32 # Be careful; 'Int' in Julia means Int64
-    items::NTuple{5, MyInnerUniformBlock}
+    items::StaticBlockArray{5, MyInnerUniformBlock}
     b::Bool
 end
 
@@ -534,12 +536,12 @@ Sample usage:
 @std140 struct MyInnerUniformBlock
     f::Float32
     bools::vb4
-    position_array::NTuple{12, v3f}
+    position_array::StaticBlockArray{12, v3f}
 end
 
 @std430 struct MyOuterShaderStorageBlock
     i::Int32 # Be careful; 'Int' in Julia means Int64
-    items::NTuple{5, MyInnerShaderStorageBlock}
+    items::StaticBlockArray{5, MyInnerShaderStorageBlock}
     b::Bool
 end
 
@@ -584,17 +586,17 @@ function block_struct_impl(struct_expr, mode::Type{<:AbstractOglBlock}, invoking
     mode_description = mode_switch(() -> :std140,
                                    () -> :std430)
 
-    SCALAR_TYPES = Union{Scalar32, Scalar64, Bool}
-    VECTOR_TYPES = Union{(
+    SCALAR_TYPE = Union{Scalar32, Scalar64, Bool}
+    VECTOR_TYPE = Union{(
         Vec{n, t}
-          for (n, t) in Iterators.product(1:4, union_types(SCALAR_TYPES))
+          for (n, t) in Iterators.product(1:4, union_types(SCALAR_TYPE))
     )...}
-    MATRIX_TYPES = Union{(
+    MATRIX_TYPE = Union{(
         @Mat(c, r, f)
           for (c, r, f) in Iterators.product(1:4, 1:4, (Float32, Float64))
     )...}
-    NON_ARRAY_TYPES = Union{SCALAR_TYPES, VECTOR_TYPES, MATRIX_TYPES, base_type}
-    ARRAY_TYPES = ConstVector{<:NON_ARRAY_TYPES}
+    NON_ARRAY_TYPE = Union{SCALAR_TYPE, VECTOR_TYPE, MATRIX_TYPE, base_type}
+    ARRAY_TYPE = StaticBlockArray{N, <:NON_ARRAY_TYPE} where {N}
 
     # Parse the header.
     (is_mutable_from_cpu::Bool, struct_name, body::Expr) = struct_expr.args
@@ -608,27 +610,26 @@ function block_struct_impl(struct_expr, mode::Type{<:AbstractOglBlock}, invoking
     lines = [line for line in body.args if !isa(line, LineNumberNode)]
     function check_field_errors(field_name, T, is_within_array::Bool = false)
         if T <: Vec
-            if !(T <: VECTOR_TYPES)
+            if !(T <: VECTOR_TYPE)
                 error("Invalid vector count or type in ", field_name, ": ", T)
             end
         elseif T <: Mat
-            if !(T <: MATRIX_TYPES)
+            if !(T <: MATRIX_TYPE)
                 error("Invalid matrix size or component type in ", field_name, ": ", T)
             end
-        elseif T <: NTuple
+        elseif T <: StaticBlockArray
             if is_within_array
                 error("No nested arrays allowed, for simplicity. Flatten field ", field_name)
             end
             check_field_errors(field_name, eltype(T), true)
-        elseif isstructtype(T) # Note that NTuple is a 'struct type', so
-                               #    it's important to handle the NTuple case first
+        elseif isstructtype(T)
             if !(T <: base_type)
                 error("Non-", mode_description, " struct referenced by ", field_name, ": ", T)
             end
-        elseif T <: SCALAR_TYPES
+        elseif T <: SCALAR_TYPE
             # Nothing to check
         else
-            error("Unexpected type in field ", field_name, ": ", T)
+            error("Unexpected type in field ", struct_name, ".", field_name, ": ", T)
         end
     end
     field_definitions = map(lines) do line
@@ -698,13 +699,14 @@ function block_struct_impl(struct_expr, mode::Type{<:AbstractOglBlock}, invoking
                 $BLOCK_DEFAULT_BYTE,
                 $(@__MODULE__).block_byte_size($struct_name_esc)
             ))
-            $struct_name_esc(buffer::AbstractVector{UInt8}) = new{typeof(buffer)}(buffer)
+            $struct_name_esc{TArray}(buffer::TArray) where {TArray<:AbstractVector{UInt8}} = new{TArray}(buffer)
         end
+        $(@__MODULE__).block_generic_type(::$struct_type_esc) = $struct_name_esc
 
         # Constructor that takes field values:
         if $(!isempty(field_definitions))
             function $struct_name_esc($((esc(n) for (n, t) in field_definitions)...))
-                s = $struct_name_esc(fill(BLOCK_DEFAULT_BYTE, block_byte_size($struct_name_esc)))
+                s = $struct_name_esc{Vector{UInt8}}(fill(BLOCK_DEFAULT_BYTE, block_byte_size($struct_name_esc)))
                 # Set each property to its corresponding constructor parameter.
                 $((map(field_definitions) do (n,t); :(
                     s.$n = $(esc(n))
@@ -745,4 +747,4 @@ export @std140, @std430,
        block_byte_size, block_padding_size, block_alignment, block_byte_array,
        block_property_types, block_property_type,
        glsl_decl, GLSLBlockDecl,
-       BlockArray
+       StaticBlockArray
