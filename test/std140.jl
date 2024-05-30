@@ -172,11 +172,92 @@ end
 
 # Test the generated GLSL code and that the layout matches up with OpenGL,
 #    by writing a compute shader that reads/writes the data.
+function compare_blocks(block_expected::T, block_actual::T, T_name) where {T<:AbstractOglBlock}
+    for f in propertynames(T)
+        expected = getproperty(block_expected, f)
+        actual = getproperty(block_actual, f)
+        @bp_check(typeof(expected) == typeof(actual),
+                  T_name, ".", f, ": Type: ", typeof(expected), " vs ", typeof(actual))
+        if (expected isa AbstractArray) && !isa(expected, Vec)
+            @bp_check(length(expected) == length(actual),
+                      T_name, ".", f, ": Count: ", length(expected), " vs ", length(actual))
+            for (i, el_expected, el_actual) in zip(1:length(expected), expected, actual)
+                @bp_check(el_expected == el_actual,
+                          T_name, ".", f, "[", i, "]: ",
+                            el_expected, " vs ", el_actual)
+            end
+        else
+            @bp_check(expected == actual,
+                      T_name, ".", f, ": ", expected, " vs ", actual)
+        end
+    end
+end
+function run_block_compute_test(test_value::Union{AbstractOglBlock, BlockArray},
+                                type_name, shader_src)
+    BlockType = block_simple_type(typeof(test_value))
+
+    gpu_in = Buffer(true, test_value)
+    gpu_out = Buffer(true, BlockType)
+    set_uniform_block(gpu_in, 1)
+    set_storage_block(gpu_out, 2)
+
+    shader = BplusApp.GL.bp_glsl_str(shader_src)#, debug_out = stderr)
+    dispatch_compute_groups(shader, one(v3i))
+    gl_catch_up_before(MemoryActions.ALL) #TODO: Switch back to 'buffer_download_or_upload'
+
+    cpu_expected = test_value
+    cpu_actual = get_buffer_data(gpu_out, BlockType)
+    compare_blocks(cpu_expected, cpu_actual, type_name)
+    @bp_test_no_allocations(cpu_expected, cpu_actual)
+end
 bp_gl_context( v2i(300, 300), "std140 test with compute shader";
                 vsync=VsyncModes.on,
                 debug_mode=true
              ) do context::Context
-    shader = BplusApp.GL.bp_glsl_str("""
+    # Test B, the simplest struct, first.
+    # Test C, the most complex struct, last.
+    #TODO: Test BlockArray{A}, BlockArray{B}, and BlockArray{C} as well
+    #TODO: Test passing true for the 'recommend_storage_on_cpu' flag
+
+    run_block_compute_test(TEST_B, :B, """
+        #START_COMPUTE
+        layout(local_size_x = 1) in;
+
+        layout(std140, binding = 0) uniform Bin {
+            $(glsl_decl(B))
+        } u_in;
+        layout(std140, binding = 1) buffer Bout {
+            $(glsl_decl(B))
+        } u_out;
+
+        void main() {
+            $((
+                "u_out.$f = u_in.$f;"
+                 for f in propertynames(B)
+            )...)
+        }
+    """)
+
+    run_block_compute_test(make_a_1(), :A, """
+        #START_COMPUTE
+        layout(local_size_x = 1) in;
+
+        layout(std140, binding = 0) uniform Ain {
+            $(glsl_decl(A))
+        } u_in;
+        layout(std140, binding = 1) buffer Aout {
+            $(glsl_decl(A))
+        } u_out;
+
+        void main() {
+            $((
+                "u_out.$f = u_in.$f;"
+                 for f in propertynames(A)
+            )...)
+        }
+    """)
+
+    run_block_compute_test(TEST_C, :C, """
         #START_COMPUTE
         layout(local_size_x = 1) in;
 
@@ -190,7 +271,7 @@ bp_gl_context( v2i(300, 300), "std140 test with compute shader";
         layout(std140, binding = 0) uniform Cin {
             $(glsl_decl(C))
         } u_in;
-        layout(std140, binding = 0) buffer Cout {
+        layout(std140, binding = 1) buffer Cout {
             $(glsl_decl(C))
         } u_out;
 
@@ -200,24 +281,5 @@ bp_gl_context( v2i(300, 300), "std140 test with compute shader";
                  for f in propertynames(C)
             )...)
         }
-    """, debug_out = stderr)
-
-    # Send the data to one GPU buffer.
-    c_cpu = TEST_C
-    c_in_gpu = Buffer(true, c_cpu)
-    set_uniform_block(c_in_gpu, 1)
-
-    # Set up a second GPU buffer to receive it.
-    c_out_gpu = Buffer(true, C())
-    set_shader_storage_block(c_out_gpu, 1)
-
-    # Run the shader which copies the data.
-    dispatch_compute_groups(shader, one(v3i))
-    gl_catch_up_before(MemoryActions.buffer_download_or_upload)
-
-    # Download and test the results.
-    c_cpu_bytes = Vector{UInt8}(undef, block_byte_size(C))
-    get_buffer_data(c_out_gpu, c_cpu_bytes)
-    c_cpu_2 = C{Vector{UInt8}}(c_cpu_bytes)
-    @bp_test_no_allocations(c_cpu, c_cpu_2)
+    """)
 end

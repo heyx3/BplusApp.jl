@@ -21,24 +21,22 @@ abstract type OglBlock_std140 <: AbstractOglBlock end
 abstract type OglBlock_std430 <: AbstractOglBlock end
 #TODO: Dynamically support both 140 and 430 for each block type
 
+export AbstractOglBlock, OglBlock_std140, OglBlock_std430
+
+
+#  Interface:  #
+
+
 "Gets the layout type of a struct (or struct type). An example return value is `OglBlock_std140`"
 block_mode(a::AbstractOglBlock) = block_mode(typeof(a))
 block_mode(::Type{<:OglBlock_std140}) = OglBlock_std140
 block_mode(::Type{<:OglBlock_std430}) = OglBlock_std430
 
-"Create a buffer given a single instance of an `@std140` or `@std430` struct"
-Buffer( can_change_data_from_cpu::Bool,
-        initial_data::AbstractOglBlock
-        ;
-        recommend_storage_on_cpu::Bool = false
-      )::Buffer where {T} = Buffer(
-    can_change_data_from_cpu,
-    Ref(initial_data)
-    ; recommend_storage_on_cpu=recommend_storage_on_cpu
-)
-
-
-#  Interface:  #
+"
+Block structs (and block arrays) have a type parameter for the kind of array backing their data.
+This function strips that parameter from the type.
+"
+block_simple_type(::Type{<:AbstractOglBlock})::UnionAll = error()
 
 "
 Gets the total byte-size of the given struct (or array property), including padding.
@@ -88,40 +86,70 @@ function glsl_decl(T::Type{<:AbstractOglBlock},
 end
 
 
-"
-A facade for a mutable array of items within an `AbstractOglBlock`.
-"
+"A facade for a mutable array of items within an `AbstractOglBlock`"
 abstract type BlockArray{T, TMode<:AbstractOglBlock, TByteArray<:AbstractVector{UInt8}} <: AbstractVector{T} end
 
 "A facade for a mutable array of items within an `AbstractOglBlock`, of static size"
 struct StaticBlockArray{N, T, TMode<:AbstractOglBlock, TByteArray<:AbstractVector{UInt8}} <: BlockArray{T, TMode, TByteArray}
     buffer::TByteArray # Use same field name as the blocks themselves, for convenience
 end
+block_simple_type(::Type{<:StaticBlockArray{N, T, TMode}}) where {N, T, TMode} = StaticBlockArray{N, T, TMode}
+
+
+export block_mode, block_simple_type,
+       block_byte_size, block_padding_size, block_alignment,
+       block_byte_array, block_property_type, block_property_types,
+       glsl_decl,
+       BlockArray, StaticBlockArray
 
 
 #  Internals:  #
 
-# Provide simplified overloads of `set_buffer_data()` and `get_buffer_data()` for block structs.
-"Sets a buffer with a uniform block's data"
-set_buffer_data(buf::Buffer, block::AbstractOglBlock, first_byte::Integer=1) = set_buffer_bytes(
-    buf, Ref(block), block_byte_size(block);
-    first_byte = UInt(first_byte)
-)
-"Retrieves a buffer's data as an instance of a uniform block"
-get_buffer_data(buf::Buffer, block::AbstractOglBlock, first_buffer_byte::Integer=1) = get_buffer_data(
-    buf, block_byte_array(block);
-    src_byte_offset=UInt(first_buffer_byte)
-)
-"Creates a new instance of uniform block data on the CPU, read from the given buffer"
-get_buffer_data(buf::Buffer, Block::Type{<:AbstractOglBlock}, first_buffer_byte::Integer = 1)::Block = Block(
-    get_buffer_data(
-        buf;
-        src_elements=IntervalU(
-            min=first_buffer_byte,
-            size=block_byte_size(Block)
-        )
+Buffer(can_change_data_from_cpu::Bool, T::Type{<:Union{AbstractOglBlock, StaticBlockArray}}
+       ; recommend_storage_on_cpu::Bool = false
+      ) = Buffer(block_byte_size(T), can_change_data_from_cpu, recommend_storage_on_cpu)
+
+Buffer(can_change_data_from_cpu::Bool,
+       data::AbstractOglBlock
+       ; recommend_storage_on_cpu::Bool = false
+      ) = Buffer(can_change_data_from_cpu, block_byte_array(data); recommend_storage_on_cpu=recommend_storage_on_cpu)
+Buffer(can_change_data_from_cpu::Bool,
+       data::BlockArray
+       ; recommend_storage_on_cpu::Bool = false
+      ) = Buffer(can_change_data_from_cpu, block_byte_array(data); recommend_storage_on_cpu=recommend_storage_on_cpu)
+
+"Sets a buffer's data to contain the given `@std140` or `@std430` struct"
+function set_buffer_data(buffer::Buffer, data::AbstractOglBlock, buffer_first_byte::Integer=1)
+    set_buffer_data(buffer, block_byte_array(data), buffer_first_byte)
+end
+"Gets a buffer's data as the given `@std140` or `@std430` struct type"
+function get_buffer_data(b::Buffer, T::Type{<:AbstractOglBlock},
+                         buffer_first_byte::Integer = 1
+                        )::T
+    arr::Vector{UInt8} = get_buffer_data(b, (UInt8, block_byte_size(T)), buffer_first_byte)
+    return T{typeof(arr)}(arr)
+end
+
+"Sets a buffer's data to contain the given `BlockArray`"
+function set_buffer_data(buffer::Buffer, data::BlockArray, buffer_first_byte::Integer=1)
+    set_buffer_data(buffer, block_byte_array(data), buffer_first_byte)
+end
+"
+Gets a buffer's data as a kind of `BlockArray`,
+    for data mode `OglBlock_std140` or `OglBlock_std430`.
+"
+function get_buffer_data(b::Buffer,
+                         TOut::Type{StaticBlockArray{N, T, TMode}},
+                         buffer_first_byte::Integer = 1
+                        )::T where {N, T, TMode}
+    arr::Vector{UInt8} = get_buffer_data(
+        b,
+        (UInt8, block_array_element_stride(T) * N),
+        buffer_first_byte
     )
-)
+    return TOut{typeof(arr)}(arr)
+end
+
 
 glsl_type_decl(T::Type                        , name, struct_lookup::Dict{Type, String})              = "$(glsl_type_decl(T, struct_lookup)) $name"
 glsl_type_decl( ::Type{StaticBlockArray{N, T}}, name, struct_lookup::Dict{Type, String}) where {N, T} = "$(glsl_type_decl(T, struct_lookup)) $name[$N]"
@@ -181,9 +209,8 @@ end
 end
 
 # Equality and hashing:
-block_generic_type(a::AbstractOglBlock)::UnionAll = error()
 function Base.:(==)(a::AbstractOglBlock, b::AbstractOglBlock)::Bool
-    if block_generic_type(typeof(a)) != block_generic_type(typeof(b))
+    if block_simple_type(typeof(a)) != block_simple_type(typeof(b))
         return false
     end
     values_a = getproperty.(Ref(a), propertynames(typeof(a)))
@@ -230,6 +257,7 @@ Base.Ref(a::BlockArray{T}, i::Integer = 1) where {T} = Ref(block_byte_array(a), 
 "Gets the mutable byte array underlying this array"
 block_byte_array(b::BlockArray)::AbstractVector{UInt8} = getfield(b, :buffer)
 @inline block_byte_size(x::BlockArray) = length(block_byte_array(x))
+block_byte_size(::Type{<:StaticBlockArray{N, T, TMode}}) where {N, T, TMode} = N * block_array_element_stride(T, TMode)
 
 Base.Ref(a::BlockArray, i) = Ref(block_byte_array(a), i)
 
@@ -472,7 +500,7 @@ block_array_element_stride( ::Type{StaticBlockArray{N, T}} , mode) where {N, T} 
 #= A new block struct (call it `s::S`) must implement the following:
     * Base.propertynames(::Type{<:S})
     * block_property_types(::Type{<:S})
-    * block_generic_type(::Type{<:S}) = S
+    * block_simple_type(::Type{<:S}) = S
     * block_byte_size(::Type{<:S})
     * block_padding_size(::Type{<:S})
     * block_alignment(::Type{<:S})
@@ -709,7 +737,7 @@ function block_struct_impl(struct_expr, mode::Type{<:AbstractOglBlock}, invoking
             ))
             $struct_name_esc{TArray}(buffer::TArray) where {TArray<:AbstractVector{UInt8}} = new{TArray}(buffer)
         end
-        $(@__MODULE__).block_generic_type(::$struct_type_esc) = $struct_name_esc
+        $(@__MODULE__).block_simple_type(::$struct_type_esc) = $struct_name_esc
 
         # Constructor that takes field values:
         if $(!isempty(field_definitions))
@@ -751,8 +779,4 @@ function block_struct_impl(struct_expr, mode::Type{<:AbstractOglBlock}, invoking
     return output
 end
 
-export @std140, @std430,
-       block_byte_size, block_padding_size, block_alignment, block_byte_array,
-       block_property_types, block_property_type,
-       glsl_decl, GLSLBlockDecl,
-       StaticBlockArray
+export @std140, @std430

@@ -3,6 +3,8 @@ A contiguous block of memory on the GPU,
    for storing any kind of data.
 Most commonly used to store mesh vertices/indices, or other arrays of things.
 
+To initialize, you can provide its byte-size or some data to upload
+    (which passes through `buffer_data_convert()`).
 For help with uploading a whole data structure to a buffer, see `@std140` and `@std430`.
 
 UNIMPLEMENTED: Instances can be "mapped" to the CPU, allowing you to write/read them directly
@@ -15,6 +17,7 @@ mutable struct Buffer <: AbstractResource
     byte_size::UInt64
     is_mutable_from_cpu::Bool
 
+    "Create a buffer of the given size, with uninitialized data"
     function Buffer( byte_size::Integer, can_change_data_from_cpu::Bool,
                      recommend_storage_on_cpu::Bool = false
                    )::Buffer
@@ -27,29 +30,65 @@ mutable struct Buffer <: AbstractResource
         )
         return b
     end
+    "Create a buffer big enough to hold N copies of the given bitstype"
     function Buffer( can_change_data_from_cpu::Bool,
-                     initial_elements::Contiguous{T},
-                     ::Type{T} = eltype(initial_elements)
+                     T::Type, count::Integer = 1
+                     ; recommend_storage_on_cpu::Bool = false)
+        @bp_check(isbitstype(T),
+                  T, " isn't a bitstype")
+        return Buffer(sizeof(T) * count, can_change_data_from_cpu,
+                      recommend_storage_on_cpu)
+    end
+
+    "Create a buffer containing your data, given as a pointer and byte-size"
+    function Buffer( can_change_data_from_cpu::Bool,
+                     ref_and_size::Tuple{<:Ref, <:Integer},
                      ;
                      recommend_storage_on_cpu::Bool = false,
-                     contiguous_element_range::Interval{<:Integer} = Interval(
-                        min=1,
-                        size=contiguous_length(initial_elements, T)
-                     )
-                   )::Buffer where {T}
-        @bp_check(isbitstype(T), "Can't make a GPU buffer of ", T)
+                   )::Buffer
         b = new(Ptr_Buffer(), 0, false)
         set_up_buffer(
-            size(contiguous_element_range) * sizeof(T),
+            ref_and_size[2],
             can_change_data_from_cpu,
-            contiguous_ref(initial_elements, T,
-                           min_inclusive(contiguous_element_range)),
+            ref_and_size[1],
             recommend_storage_on_cpu,
             b
         )
         return b
     end
+    "Create a buffer containing your data, as an instance of some bits-type"
+    function Buffer(can_change_data_from_cpu::Bool,
+                    initial_bits_data
+                    ;
+                    recommend_storage_on_cpu::Bool = false)
+        @bp_check(isbits(initial_bits_data),
+                  typeof(initial_bits_data), " isn't a bitstype")
+        @bp_check(!isa(initial_bits_data, Bool),
+                  "You probably meant to invoke the other overload of Buffer()")
+
+        return Buffer(can_change_data_from_cpu,
+                      (Ref(initial_bits_data), sizeof(initial_bits_data))
+                      ;
+                      recommend_storage_on_cpu=recommend_storage_on_cpu)
+    end
+    "Create a buffer containing your data, as an array of some data"
+    function Buffer(can_change_data_from_cpu::Bool,
+                    data_array::AbstractArray
+                    ;
+                    recommend_storage_on_cpu::Bool = false)
+        @bp_check(isbitstype(eltype(data_array)),
+                  eltype(data_array), " isn't a bitstype")
+        if data_array isa SubArray
+            @bp_check(Base.iscontiguous(data_array),
+                      "Array view isn't contiguous so it can't be uploaded to the GPU")
+        end
+        return Buffer(can_change_data_from_cpu,
+                      (Ref(data_array, 1),
+                       sizeof(eltype(data_array)) * length(data_array))
+                      ; recommend_storage_on_cpu=recommend_storage_on_cpu)
+    end
 end
+
 
 @inline function set_up_buffer( byte_size::I, can_change_data_from_cpu::Bool,
                                 initial_byte_data::Optional{Ref},
@@ -95,95 +134,56 @@ end
 export Buffer
 
 
-################################
-#       Buffer Operations      #
-################################
+#########################
+#       Buffer Set      #
+#########################
 
-"Uploads the given data into the buffer"
-function set_buffer_data( b::Buffer,
-                          new_elements::Contiguous,
-                          T = eltype(new_elements)
-                          ;
-                          # Which part of the input array to read from
-                          src_element_range::IntervalU = IntervalU(min=1, size=contiguous_length(new_elements, T)),
-                          # Shifts the first element of the buffer's array to write to
-                          dest_element_offset::UInt = zero(UInt),
-                          # A byte offset, to be combined wth 'dest_element_offset'
-                          dest_byte_offset::UInt = zero(UInt)
-                        )
-    @bp_check(max_inclusive(src_element_range) <= contiguous_length(new_elements, T),
-              "Trying to upload a range of data beyond the input buffer")
-
-    first_byte::UInt = dest_byte_offset + ((dest_element_offset) * sizeof(T))
-    byte_size::UInt = sizeof(T) * size(src_element_range)
-    last_byte::UInt = first_byte + byte_size - 1
-    @bp_check(last_byte <= b.byte_size,
-              "Trying to write past the end of the buffer: ",
-                 "bytes ", first_byte, " => ", last_byte,
-                 ", when there's only ", b.byte_size, " bytes")
-
-    if byte_size >= 1
-        ref = contiguous_ref(new_elements, T, Int(min_inclusive(src_element_range)))
-        set_buffer_bytes(b, ref, byte_size; first_byte=first_byte)
-    end
-end
-function set_buffer_bytes(b::Buffer, data::Ref, n_bytes::Integer;
-                          first_byte::UInt = one(UInt))
+"Updates a buffer's data with a given pointer and destination byte range"
+function set_buffer_data(b::Buffer, data::Ref,
+                         buffer_byte_range::Interval{<:Integer} = IntervalU(
+                             min=1,
+                             size=b.byte_size
+                         ))
     @bp_check(b.is_mutable_from_cpu, "Buffer is immutable")
-    glNamedBufferSubData(b.handle, first_byte, n_bytes, data)
+    @bp_check(min_inclusive(buffer_byte_range) > 0,
+              "Buffer byte range starts behind the first byte! ", buffer_byte_range)
+    @bp_check(max_inclusive(buffer_byte_range) <= b.byte_size,
+              "Buffer byte range ends before the last byte! ", buffer_byte_range)
+    glNamedBufferSubData(
+        b.handle,
+        min_inclusive(buffer_byte_range) - 1,
+        size(buffer_byte_range),
+        data
+    )
+    return nothing
 end
 
-"
-Loads the buffer's data into the given array.
-You may instead pass a type, and this function will create and return an array of it for you.
-Note that counts are per-element, not per-byte.
-"
-function get_buffer_data( b::Buffer,
-                          # The array which will contain the results,
-                          #    or the type of the new array to make
-                          output::Union{AbstractVector{T}, Type{T}} = UInt8
-                          ;
-                          # Shifts the first element to write to in the output array
-                          dest_offset::UInt = zero(UInt),
-                          # The start of the buffer's array data
-                          src_byte_offset::UInt = zero(UInt),
-                          # The elements to read from the buffer (defaults to as much as possible)
-                          src_elements::IntervalU = IntervalU(
-                              min=1,
-                              size=min((b.byte_size - src_byte_offset) ÷ sizeof(T),
-                                       (output isa Vector{T}) ?
-                                           (length(output) - dest_offset) :
-                                           typemax(UInt))
-                          )
-                        )::Optional{Vector{T}} where {T}
-    src_first_byte::UInt = convert(UInt, src_byte_offset + ((min_inclusive(src_elements) - 1) * sizeof(T)))
-    n_bytes::UInt = convert(UInt, size(src_elements) * sizeof(T))
+"Sets a buffer's data with an array and destination byte range"
+function set_buffer_data(b::Buffer, data::AbstractArray, buffer_first_byte::Integer = 1)
+    T = eltype(data)
+    @bp_check(isbitstype(T), "Can't upload an array of non-bitstype '$T' to a GPU Buffer")
 
-    if output isa AbstractVector{T}
-        @bp_check(dest_offset + size(src_elements) <= length(output),
-                  "Trying to read Buffer into an array, but the array isn't big enough.",
-                    " Trying to write to elements ", (dest_offset + 1),
-                    " - ", (dest_offset + size(src_elements)), ", but there are only ",
-                    length(output))
-    else
-        @bp_check(iszero(dest_offset),
-                  "In 'get_buffer_data()', you provided 'dest_offset' of ", dest_offset,
-                     " but no output array")
-    end
-    output_array::Vector{T} = (output isa AbstractVector{T}) ?
-                                  output :
-                                  Vector{T}(undef, size(src_elements))
-
-    output_ptr = Ref(output_array, Int(dest_offset + 1))
-
-    glGetNamedBufferSubData(b.handle, src_first_byte, n_bytes, output_ptr)
-
-    if !(output isa AbstractVector{T})
-        return output_array
-    else
-        return nothing
-    end
+    set_buffer_data(b, Ref(data, 1),
+                    IntervalU(min=buffer_first_byte,
+                              size=length(data)*sizeof(T)))
 end
+
+"Sets a buffer's data to a given bitstype data"
+@inline function set_buffer_data(b::Buffer, bits_data, buffer_first_byte::Integer = 1)
+    @bp_check(isbits(bits_data),
+              typeof(bits_data), " isn't a bitstype")
+    set_buffer(b, Ref(bits_data),
+               IntervalU(min=buffer_first_byte,
+                         size=sizeof(bits_data)))
+end
+
+export set_buffer_data
+
+
+#########################
+#      Buffer Copy      #
+#########################
+
 
 "
 Copies data from one buffer to another.
@@ -191,10 +191,10 @@ By default, copies as much data as possible.
 "
 function copy_buffer( src::Buffer, dest::Buffer
                       ;
-                      src_byte_offset::Integer = 0x0,
-                      dest_byte_offset::Integer = 0x0,
-                      byte_size::Integer = min(src.byte_size - src.byte_offset,
-                                               dest.byte_size - dest.byte_offset)
+                      src_byte_offset::UInt = 0x0,
+                      dest_byte_offset::UInt = 0x0,
+                      byte_size::UInt = min(src.byte_size - src.byte_offset,
+                                            dest.byte_size - dest.byte_offset)
                     )
     @bp_check(src_byte_offset + byte_size <= src.byte_size,
               "Going outside the bounds of the 'src' buffer in a copy:",
@@ -210,5 +210,77 @@ function copy_buffer( src::Buffer, dest::Buffer
                              byte_size)
 end
 
-export set_buffer_data, set_buffer_bytes,
-       get_buffer_data, copy_buffer
+export copy_buffer
+
+
+#########################
+#       Buffer Get      #
+#########################
+
+"
+Gets a buffer's data and writes it to the given pointer.
+Optionally uses a subset of the buffer's bytes.
+"
+function get_buffer_data(b::Buffer, output::Ref,
+                         buffer_byte_range::Interval{<:Integer} = IntervalU(
+                             min=1,
+                             size=b.byte_size
+                         ))::Nothing
+    @bp_check(min_inclusive(buffer_byte_range) > 0,
+              "Buffer byte range passes behind the start of the buffer: ", buffer_byte_range)
+    @bp_check(max_inclusive(buffer_byte_range) <= b.byte_size,
+              "Buffer byte range passes beyond the end of the buffer ",
+                "(size ", b.byte_size, "): ", buffer_byte_range)
+    glGetNamedBufferSubData(
+        b.handle,
+        min_inclusive(buffer_byte_range) - 1,
+        size(buffer_byte_range),
+        output
+    )
+end
+
+"Gets a buffer's data and returns it as an instance of the given bits-type"
+function get_buffer_data(b::Buffer, ::Type{T},
+                         buffer_first_byte::Integer = 1
+                        )::T where {T}
+    @bp_check(isbitstype(T),   T, " isn't a bitstype")
+    let r = Ref{T}()
+        get_buffer_data(b, r,
+                        IntervalU(min=buffer_first_byte, size=sizeof(T)))
+        return r[]
+    end
+end
+
+"Gets a buffer's data and writes it into the given array of bitstypes"
+function get_buffer_data(b::Buffer, a::AbstractArray{T},
+                         buffer_first_byte::Integer = 1
+                        )::Nothing where {T}
+    @bp_check(isbitstype(T),   T, " isn't a bitstype")
+    if a isa SubArray
+        @bp_check(Base.iscontiguous(a),
+                  "Array view isn't contiguous so it can't be uploaded to the GPU")
+    end
+
+    get_buffer_data(b, Ref(a, 1),
+                    IntervalU(min=buffer_first_byte,
+                              size=sizeof(T)*length(a)))
+    return nothing
+end
+
+"Gets a buffer's data and returns it as an array of the given count (per-axis) and bits-type"
+function get_buffer_data(b::Buffer, output::Tuple{Type, Vararg{Integer}},
+                         buffer_first_byte::Integer = 1)::Vector{output[1]}
+    (T, vec_size...) = output
+    @bp_check(isbitstype(T),   T, "isn't a bitstype")
+
+    Dimensions = length(vec_size)
+    @bp_check(Dimensions > 0,
+              "Must provide at least one axis for the output array; provided ",
+                vec_size)
+
+    arr = Array{T, Dimensions}(undef, vec_size)
+    get_buffer_data(b, arr, buffer_first_byte)
+    return arr
+end
+
+export get_buffer_data
