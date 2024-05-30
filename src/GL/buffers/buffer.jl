@@ -177,6 +177,9 @@ end
                          size=sizeof(bits_data)))
 end
 
+# Vec is bitstype, but also AbstractArray. It should be treated as the former.
+set_buffer_data(b::Buffer, v::Vec, buffer_first_byte::Integer = 1) = set_buffer_data(b, v.data, buffer_first_byte)
+
 export set_buffer_data
 
 
@@ -255,6 +258,8 @@ end
 function get_buffer_data(b::Buffer, a::AbstractArray{T},
                          buffer_first_byte::Integer = 1
                         )::Nothing where {T}
+    @bp_check(!isbitstype(a),  typeof(a), " doesn't appear to be a mutable array")
+        # Note that we can't use ismutable() because some immutable structs hold a reference to mutable data
     @bp_check(isbitstype(T),   T, " isn't a bitstype")
     if a isa SubArray
         @bp_check(Base.iscontiguous(a),

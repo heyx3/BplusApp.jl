@@ -203,7 +203,7 @@ function run_block_compute_test(test_value::Union{AbstractOglBlock, BlockArray},
 
     shader = BplusApp.GL.bp_glsl_str(shader_src)#, debug_out = stderr)
     dispatch_compute_groups(shader, one(v3i))
-    gl_catch_up_before(MemoryActions.ALL) #TODO: Switch back to 'buffer_download_or_upload'
+    gl_catch_up_before(MemoryActions.buffer_download_or_upload)
 
     cpu_expected = test_value
     cpu_actual = get_buffer_data(gpu_out, BlockType)
