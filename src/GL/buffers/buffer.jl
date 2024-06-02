@@ -172,9 +172,9 @@ end
 @inline function set_buffer_data(b::Buffer, bits_data, buffer_first_byte::Integer = 1)
     @bp_check(isbits(bits_data),
               typeof(bits_data), " isn't a bitstype")
-    set_buffer(b, Ref(bits_data),
-               IntervalU(min=buffer_first_byte,
-                         size=sizeof(bits_data)))
+    set_buffer_data(b, Ref(bits_data),
+                    IntervalU(min=buffer_first_byte,
+                              size=sizeof(bits_data)))
 end
 
 # Vec is bitstype, but also AbstractArray. It should be treated as the former.

@@ -393,7 +393,7 @@ function Program(handle::Ptr_Program, flexible_mode::Bool = false; is_compute::B
         glGetProgramResourceName(handle,
                                  GL_SHADER_STORAGE_BLOCK, block_idx - 1,
                                  block_name_length[], C_NULL, Ref(name_c_buffer, 1))
-        block_name = String(@view name_c_buffer[1 : (block_name_length[] - 1)])
+        block_name = String(@view name_c_buffer[1 : block_name_length[]])
         storage_blocks[block_name] = ShaderBlockData(
             Ptr_ShaderBuffer(block_idx - 1),
             get_from_ogl(GLint, glGetProgramResourceiv,
@@ -413,14 +413,14 @@ function Program(handle::Ptr_Program, flexible_mode::Bool = false; is_compute::B
             get_from_ogl(GLint, glGetProgramiv, handle, GL_ACTIVE_UNIFORM_BLOCK_MAX_NAME_LENGTH))
     for block_idx::Int in 1:n_uniform_blocks
         block_name_length::GLsizei = 0
-        @c glGetActiveUniformBlockName(handle, block_idx, length(name_c_buffer),
+        @c glGetActiveUniformBlockName(handle, block_idx - 1, length(name_c_buffer),
                                        &block_name_length, &name_c_buffer[0])
+        block_name = String(@view name_c_buffer[1:block_name_length])
 
-        block_name = String(@view name_c_buffer[1 : (block_name_length - 1)])
         uniform_blocks[block_name] = ShaderBlockData(
             Ptr_ShaderBuffer(block_idx - 1),
             get_from_ogl(GLint, glGetActiveUniformBlockiv,
-                         handle, block_idx, GL_UNIFORM_BLOCK_DATA_SIZE)
+                         handle, block_idx - 1, GL_UNIFORM_BLOCK_DATA_SIZE)
         )
     end
 
@@ -429,10 +429,11 @@ function Program(handle::Ptr_Program, flexible_mode::Bool = false; is_compute::B
     block_uniform_indices = Vector{GLint}(undef, 128)
     for block_idx::Int in 1:n_uniform_blocks
         resize!(block_uniform_indices,
-                get_from_ogl(GLint, glGetActiveUniformBlockiv, handle, block_idx,
+                get_from_ogl(GLint, glGetActiveUniformBlockiv, handle, block_idx - 1,
                              GL_UNIFORM_BLOCK_ACTIVE_UNIFORMS))
-        @c glGetActiveUniformBlockiv(handle, GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES,
-                                     block_idx, &block_uniform_indices[0])
+        @c glGetActiveUniformBlockiv(handle, block_idx - 1,
+                                     GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES,
+                                     &block_uniform_indices[0])
         append!(uniform_indices_to_skip, block_uniform_indices)
     end
 

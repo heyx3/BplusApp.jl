@@ -168,7 +168,33 @@ function pull_gl_logs()::Vector{OpenGLEvent}
     return output
 end
 
-export OpenGLEvent, pull_gl_logs
+
+"
+A macro to help find OpenGL issues.
+Place it before or after each OpenGL call to detect the most recent errors.
+If no message data is provided, the code file/line is logged instead.
+"
+macro check_gl_logs(context...)
+    out_msg = :( string($(esc.(context)...)) )
+    gl_module = @__MODULE__
+    return quote
+        out_msg() = $out_msg
+        for log in $gl_module.pull_gl_logs()
+            if log.severity in ($gl_module.DebugEventSeverities.high, $gl_module.DebugEventSeverities.medium)
+                @error "$(out_msg()) $(sprint(show, log))"
+            elseif log.severity == $gl_module.DebugEventSeverities.low
+                @warn "$(out_msg()) $(sprint(show, log))"
+            elseif log.severity == $gl_module.DebugEventSeverities.none
+                @info "$(out_msg()) $(sprint(show, log))"
+            else
+                error("Unhandled case: ", log.severity)
+            end
+        end
+    end
+end
+
+
+export OpenGLEvent, pull_gl_logs, @check_gl_logs
 
 
 ##########################
