@@ -759,7 +759,7 @@ function set_tex_depth( t::Texture,
                         subset::TexSubset = default_tex_subset(t)
                         ;
                         recompute_mips::Bool = true
-                      ) where {T<:Union{Number, Vec{1, <:Number}}}
+                      ) where {T}
     @bp_check(is_depth_only(t.format),
               "Can't set depth values in a texture of format ", t.format)
     texture_op_impl(

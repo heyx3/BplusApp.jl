@@ -45,7 +45,6 @@ A Context service which defines a bunch of useful GL resources:
                            [ VertexDataSource(quad_poses, sizeof(Vec{2, Int8})) ],
                            [ VertexAttribute(1, 0x0, VSInput_FVector(Vec2{Int8}, false)) ])
 
-        #TODO: Bool uniforms to avoid the extra math
         blit = bp_glsl"""
             uniform mat3 u_mesh_transform = mat3(1, 0, 0,
                                                  0, 1, 0,
