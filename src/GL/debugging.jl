@@ -172,7 +172,6 @@ end
 "
 A macro to help find OpenGL issues.
 Place it before or after each OpenGL call to detect the most recent errors.
-If no message data is provided, the code file/line is logged instead.
 "
 macro check_gl_logs(context...)
     out_msg = :( string($(esc.(context)...)) )

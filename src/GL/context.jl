@@ -613,7 +613,7 @@ function set_culling(context::Context, cull::E_FaceCullModes)
         else
             # Re-enable culling?
             if context.state.cull_mode == FaceCullModes.off
-                glEnable(GL_CULL_FACE_MODE)
+                glEnable(GL_CULL_FACE)
             end
             glCullFace(GLenum(cull))
         end
@@ -715,6 +715,9 @@ function set_blending(context::Context, blend_rgb::BlendStateRGB, blend_a::Blend
             alpha = blend_a
         ))
     end
+end
+function set_blending(context::Context, val::@NamedTuple{rgb::BlendStateRGB, alpha::BlendStateAlpha})
+    set_blending(context, val.rgb, val.alpha)
 end
 set_render_state(::Val{:blend_mode}, val::@NamedTuple{rgb::BlendStateRGB, alpha::BlendStateAlpha}, c::Context) =
    set_blending(c, val.rgb, val.alpha)
@@ -905,6 +908,7 @@ set_depth_test(test::E_ValueTests) = set_depth_test(get_context(), test)
 set_depth_writes(enabled::Bool) = set_depth_writes(get_context(), enabled)
 set_blending(blend::BlendState_) = set_blending(get_context(), blend)
 set_blending(rgb::BlendStateRGB, a::BlendStateAlpha) = set_blending(get_context(), rgb, a)
+set_blending(val::@NamedTuple{rgb::BlendStateRGB, alpha::BlendStateAlpha}) = set_blending(get_context(), val)
 set_stencil_test(test::StencilTest) = set_stencil_test(get_context(), test)
 set_stencil_test_front(test::StencilTest) = set_stencil_test_front(get_context(), test)
 set_stencil_test_back(test::StencilTest) = set_stencil_test_back(get_context(), test)
@@ -990,7 +994,7 @@ macro render_state_wrapper(signature, cache_old, set_new, set_old, description)
 end
 
 @render_state_wrapper(with_culling(cull::E_FaceCullModes),
-                      old_cull = context.cull_mode,
+                      old_cull = context.state.cull_mode,
                       set_culling(context, cull),
                       set_culling(context, old_cull),
                       "cull state")
