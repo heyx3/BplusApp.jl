@@ -156,9 +156,9 @@ glsl_type_decl( ::Type{StaticBlockArray{N, T}}, name, struct_lookup::Dict{Type, 
 
 glsl_type_decl(::Type{Bool}, struct_lookup::Dict{Type, String}) = "bool"
 glsl_type_decl(::Type{Int32}, struct_lookup::Dict{Type, String}) = "int"
-glsl_type_decl(::Type{Int64}, struct_lookup::Dict{Type, String}) = "int64"
+glsl_type_decl(::Type{Int64}, struct_lookup::Dict{Type, String}) = "int64_t"
 glsl_type_decl(::Type{UInt32}, struct_lookup::Dict{Type, String}) = "uint"
-glsl_type_decl(::Type{UInt64}, struct_lookup::Dict{Type, String}) = "uint64"
+glsl_type_decl(::Type{UInt64}, struct_lookup::Dict{Type, String}) = "uint64_t"
 glsl_type_decl(::Type{Float32}, struct_lookup::Dict{Type, String}) = "float"
 glsl_type_decl(::Type{Float64}, struct_lookup::Dict{Type, String}) = "double"
 glsl_type_decl(::Type{Vec{N, Bool}}, struct_lookup::Dict{Type, String}) where {N} = "bvec$N"

@@ -224,8 +224,8 @@ function apply_impl( s::TexSampler{N},
     # Set mip bias.
     @bp_check(min_inclusive(s.mip_range) >= 1,
               "TexSampler's mip range must start at 1 or above. The requested range is: ", s.mip_range)
-    gl_set_func_f(ptr, GL_TEXTURE_BASE_LEVEL, min_inclusive(s.mip_range) - 1)
-    gl_set_func_f(ptr, GL_TEXTURE_MAX_LEVEL, max_inclusive(s.mip_range) - 1)
+    gl_set_func_i(ptr, GL_TEXTURE_BASE_LEVEL, min_inclusive(s.mip_range) - 1)
+    gl_set_func_i(ptr, GL_TEXTURE_MAX_LEVEL, max_inclusive(s.mip_range) - 1)
     gl_set_func_f(ptr, GL_TEXTURE_LOD_BIAS, s.mip_offset)
 
     # Depth comparison.

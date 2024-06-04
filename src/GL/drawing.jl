@@ -79,7 +79,7 @@ NOTE: There is one small, relatively-esoteric OpenGL feature that is not include
 "
 function render_mesh( mesh::Mesh, program::Program
                       ;
-                      #TODO: Can't do type inference with named parameters! This creates garbage and slowdown.
+                      #TODO: Can't do type inference with named parameters! This might create garbage and slowdown.
                       shape::E_PrimitiveTypes = mesh.type,
                       indexed_params::Optional{DrawIndexed} =
                           exists(mesh.index_data) ? DrawIndexed() : nothing,

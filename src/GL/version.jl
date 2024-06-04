@@ -50,8 +50,7 @@ const OGL_RECOMMENDED_EXTENSIONS = (
     # For native 64-bit integer types (otherwise you need to use uint2):
     ExtensionRequest(
         "GL_ARB_gpu_shader_int64",
-        ExtensionMode.enable,
-        ""
+        ExtensionMode.enable
     )
 )
 

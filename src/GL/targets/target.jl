@@ -165,10 +165,8 @@ function Target(color::TargetOutput, depth_stencil::E_DepthStencilFormats,
                                           depth_stencil_sampling = ds_tex_sampling_mode)
                 ))
 
-    return make_target(size, 1,
-                       [ TargetOutput(tex=color) ],
-                       depth,
-                       [ @optional(!ds_is_target_buffer, depth.tex) ])
+    return make_target(size, 1,   [ color ], depth,
+                       Texture[ @optional(!ds_is_target_buffer, depth.tex) ])
 end
 
 
