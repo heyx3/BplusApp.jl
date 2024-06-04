@@ -72,7 +72,7 @@ bp_gl_context( v2i(800, 500), "Compute tests: SSBO",
     function run_tests(context_msg...)
         gl_catch_up_before(MemoryActions.texture_upload_or_download)
         expected::Vector{v2f} = reshape(array, (prod(RESOLUTION), ))
-        actual::Vector{v2f} = get_buffer_data(buf, v2f)
+        actual::Vector{v2f} = get_buffer_data(buf, (v2f, length(expected)))
         check_gl_logs("After reading compute buffer $(context_msg...)")
         axis_difference::Vector{v2f} = abs.(expected .- actual)
         total_difference::Vector{Float32} = vlength.(axis_difference)

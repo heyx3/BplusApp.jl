@@ -1,4 +1,4 @@
-# v0.1.2
+# v0.2.0
 
 * Add GUI helpers:
   * `gui_tab_views()`
@@ -6,8 +6,11 @@
 * Add `convert_pixel()` to translate `ImageIO` data into B+ terms
 * Fix bug when using `View` instead of `Texture` in CImGui/GuiService
 * Allow getting the handle of a `View` with `get_ogl_handle(v)`
-* Catch more user errors:
-  * Trying to make a `@std140` or `@std430` struct mutable
+* **[Breaking]** Improve the getting and setting of Buffer data
+* **[Breaking]** Completely rewrite `@std140` and `@std430`
+  * They must be mutable to avoid Julia JIT dying on crazy immutable types like `NTuple{16400, UInt8}`
+  * Now they are backed by a mutable byte array rather than an `NTuple` of bytes
+    * Nested structs and static-arrays are views of the outermost struct's byte array
 
 # v0.1.1
 

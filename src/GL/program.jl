@@ -393,7 +393,7 @@ function Program(handle::Ptr_Program, flexible_mode::Bool = false; is_compute::B
         glGetProgramResourceName(handle,
                                  GL_SHADER_STORAGE_BLOCK, block_idx - 1,
                                  block_name_length[], C_NULL, Ref(name_c_buffer, 1))
-        block_name = String(@view name_c_buffer[1 : (block_name_length[] - 1)])
+        block_name = String(@view name_c_buffer[1 : block_name_length[]])
         storage_blocks[block_name] = ShaderBlockData(
             Ptr_ShaderBuffer(block_idx - 1),
             get_from_ogl(GLint, glGetProgramResourceiv,
@@ -413,14 +413,14 @@ function Program(handle::Ptr_Program, flexible_mode::Bool = false; is_compute::B
             get_from_ogl(GLint, glGetProgramiv, handle, GL_ACTIVE_UNIFORM_BLOCK_MAX_NAME_LENGTH))
     for block_idx::Int in 1:n_uniform_blocks
         block_name_length::GLsizei = 0
-        @c glGetActiveUniformBlockName(handle, block_idx, length(name_c_buffer),
+        @c glGetActiveUniformBlockName(handle, block_idx - 1, length(name_c_buffer),
                                        &block_name_length, &name_c_buffer[0])
+        block_name = String(@view name_c_buffer[1:block_name_length])
 
-        block_name = String(@view name_c_buffer[1 : (block_name_length - 1)])
         uniform_blocks[block_name] = ShaderBlockData(
             Ptr_ShaderBuffer(block_idx - 1),
             get_from_ogl(GLint, glGetActiveUniformBlockiv,
-                         handle, block_idx, GL_UNIFORM_BLOCK_DATA_SIZE)
+                         handle, block_idx - 1, GL_UNIFORM_BLOCK_DATA_SIZE)
         )
     end
 
@@ -429,10 +429,11 @@ function Program(handle::Ptr_Program, flexible_mode::Bool = false; is_compute::B
     block_uniform_indices = Vector{GLint}(undef, 128)
     for block_idx::Int in 1:n_uniform_blocks
         resize!(block_uniform_indices,
-                get_from_ogl(GLint, glGetActiveUniformBlockiv, handle, block_idx,
+                get_from_ogl(GLint, glGetActiveUniformBlockiv, handle, block_idx - 1,
                              GL_UNIFORM_BLOCK_ACTIVE_UNIFORMS))
-        @c glGetActiveUniformBlockiv(handle, GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES,
-                                     block_idx, &block_uniform_indices[0])
+        @c glGetActiveUniformBlockiv(handle, block_idx - 1,
+                                     GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES,
+                                     &block_uniform_indices[0])
         append!(uniform_indices_to_skip, block_uniform_indices)
     end
 
@@ -890,8 +891,12 @@ end
 Compiles a string with special formatting into a `Program`.
 For info on how to format it, refer to the docs for `@bp_glsl_str`
   (the string macro version).
+
+To debug-log the generated shaders, pass a stream to 'debug_out'.
 "
-function bp_glsl_str(src::AbstractString, ::Val{GenerateCode} = Val(false)) where {GenerateCode}
+function bp_glsl_str(src::AbstractString, ::Val{GenerateCode} = Val(false)
+                     ; debug_out::Optional{IO} = nothing
+                    ) where {GenerateCode}
     # Define info about the different pieces of the shader.
     separators = Dict(
         :vert => ("#START_VERTEX", findfirst("#START_VERTEX", src)),
@@ -972,6 +977,21 @@ function bp_glsl_str(src::AbstractString, ::Val{GenerateCode} = Val(false)) wher
                       string("#define IN_COMPUTE_SHADER\n", src_header,
                              gen_line_command(first(compute_range)),
                              src[compute_range])
+
+    if exists(debug_out)
+        if exists(src_vertex)
+            print(debug_out, "//START_VERTEX\n", src_vertex, "\n\n\n")
+        end
+        if exists(src_geom)
+            print(debug_out, "//START_GEOM\n", src_geom, "\n\n\n")
+        end
+        if exists(src_fragment)
+            print(debug_out, "//START_FRAGMENT\n", src_fragment, "\n\n\n")
+        end
+        if exists(src_compute)
+            print(debug_out, "//START_COMPUTE\n", src_compute, "\n\n\n")
+        end
+    end
 
     if GenerateCode
         prog_type = Program

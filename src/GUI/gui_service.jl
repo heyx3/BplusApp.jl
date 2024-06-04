@@ -350,7 +350,7 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
         font_texture = make_gui_font_texture_atlas()
         # Mesh vertex/index data is generated procedurally, into a single mesh object.
         buffer_vertices = Buffer(sizeof(CImGui.ImDrawVert) * initial_vertex_capacity,
-                                true, KEEP_MESH_DATA_ON_CPU)
+                                 true, KEEP_MESH_DATA_ON_CPU)
         buffer_indices = Buffer(sizeof(CImGui.ImDrawIdx) * initial_index_capacity,
                                 true, KEEP_MESH_DATA_ON_CPU)
         mesh = gui_generate_mesh(buffer_vertices, buffer_indices)

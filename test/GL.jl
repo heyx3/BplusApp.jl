@@ -1,14 +1,8 @@
-# To disable the slower tests, set `global GL_TEST_FULL=false`.
-if !@isdefined GL_TEST_FULL
-    GL_TEST_FULL = false
-    println("#TODO: Make the full test deterministic and plainly laid-out; not nested deeply in loops")
-end
-
 # Runs a test on buffers.
 function test_buffers()
     # Initialize one with some data.
     buf::Buffer = Buffer(true, [ 0x1, 0x2, 0x3, 0x4 ])
-    data::Vector{UInt8} = get_buffer_data(buf)
+    data = get_buffer_data(buf, (UInt8, 4))
     @bp_check(data isa Vector{UInt8}, "Actual type: ", data)
     @bp_check(data == [ 0x1, 0x2, 0x3, 0x4 ],
               "Expected data: ", map(bitstring, [ 0x1, 0x2, 0x3, 0x4 ]),
@@ -16,7 +10,7 @@ function test_buffers()
 
     # Try setting its data after creation.
     set_buffer_data(buf, [ 0x5, 0x7, 0x9, 0x19])
-    @bp_check(get_buffer_data(buf) == [ 0x5, 0x7, 0x9, 0x19 ])
+    @bp_check(get_buffer_data(buf, (UInt8, 4)) == [ 0x5, 0x7, 0x9, 0x19 ])
 
     # Try reading the data into an existing array.
     buf_actual = UInt8[ 0x0, 0x0, 0x0, 0x0 ]
@@ -26,29 +20,27 @@ function test_buffers()
     # Try setting the buffer to contain one big int, make sure there's no endianness issues.
     set_buffer_data(buf,    [ 0b11110000000000111000001000100101 ])
     buf_actual = get_buffer_data(buf, UInt32)
-    @bp_check(buf_actual == [ 0b11110000000000111000001000100101 ],
+    @bp_check(buf_actual ==   0b11110000000000111000001000100101,
               "Actual data: ", buf_actual)
 
     # Try setting and getting with offsets.
     set_buffer_data(buf, [ 0x5, 0x7, 0x9, 0x19])
-    buf_actual = get_buffer_data(buf, UInt8; src_elements = IntervalU(min=2, size=2))
+    buf_actual = get_buffer_data(buf, (UInt8, 2), 2)
     @bp_check(buf_actual == [ 0x7, 0x9 ], map(bitstring, buf_actual))
-    buf_actual = get_buffer_data(buf, UInt8;
-                                 src_elements = IntervalU(min=2, size=2),
-                                 src_byte_offset = 1)
+    buf_actual = get_buffer_data(buf, (UInt8, 2), 3)
     @bp_check(buf_actual == [ 0x9, 0x19 ], map(bitstring, buf_actual))
     buf_actual = UInt8[ 0x2, 0x0, 0x0, 0x0, 0x0, 0x4 ]
-    get_buffer_data( buf, buf_actual; dest_offset = UInt(1))
+    get_buffer_data( buf, @view(buf_actual[2:end-1]))
     @bp_check(buf_actual == [ 0x2, 0x5, 0x7, 0x9, 0x19, 0x4 ],
               buf_actual)
 
     # Try copying.
     buf2 = Buffer(30, true, true)
     copy_buffer(buf, buf2;
-                src_byte_offset = 2,
-                dest_byte_offset = 11,
-                byte_size = 2)
-    buf_actual = get_buffer_data(buf2; src_byte_offset = 11, src_elements = IntervalU(min=1, size=2))
+                src_byte_offset = UInt(2),
+                dest_byte_offset = UInt(11),
+                byte_size = UInt(2))
+    buf_actual = get_buffer_data(buf2, (UInt8, 2), 12)
     @bp_check(buf_actual == [ 0x9, 0x19 ],
               "Copying buffers with offsets: expected [ 0x9, 0x19 ], got ", buf_actual)
 
@@ -73,14 +65,8 @@ bp_gl_context( v2i(800, 500), "Running tests...press Enter to finish once render
     println("Device: ", context.device.gpu_name)
 
     # Run some basic tests with GL resources.
-    if GL_TEST_FULL
-        seed = rand(UInt64)
-        println("Seed for GL test: ", seed)
-        Random.seed!(seed)
-
-        test_buffers()
-        check_gl_logs("running test battery")
-    end
+    test_buffers()
+    check_gl_logs("running test battery")
 
     # Keep track of the resources to clean up, in the order they should be cleaned up.
     to_clean_up = AbstractResource[ ]
@@ -279,7 +265,7 @@ bp_gl_context( v2i(800, 500), "Running tests...press Enter to finish once render
     set_blending(context, make_blend_opaque(BlendStateRGBA))
 
     camera_yaw_radians::Float32 = 0
-    timer::Int = (GL_TEST_FULL ? 5 : 500) * 60  #Vsync is on, assume 60fps
+    timer::Int = 8 * 60  #Vsync is on, assume 60fps
     while !GLFW.WindowShouldClose(context.window)
         window_size::v2i = get_window_size(context)
         check_gl_logs("starting a new tick")
