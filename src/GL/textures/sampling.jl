@@ -75,6 +75,9 @@ end
     pixel_filter::E_PixelFilters = PixelFilters.smooth
     mip_filter::MipFilters = pixel_filter
 
+    # A separate filter to use when shrinking the image (as opposed to magnifying it).
+    pixel_min_filter::E_PixelFilters = pixel_filter
+
     # Anisotropic filtering.
     # Should have a value between 1 and get_context().device.max_anisotropy.
     anisotropy::Float32 = one(Float32)
@@ -85,7 +88,7 @@ end
     # Sets the boundaries of the mip levels used in sampling.
     # As usual, 1 is the first mip (i.e. original texture), and
     #    higher values represent smaller mips.
-    mip_range::IntervalU = Interval(min=UInt32(1), max=UInt32(1001))
+    mip_range::IntervalF = Interval(min=-999, max=1001)
 
     # If this is a depth (or depth-stencil) texture,
     #    this setting makes it a "shadow" sampler.
@@ -108,22 +111,25 @@ function StructTypes.construct(values::Vector{Any}, T::Type{<:TexSampler})
         kw_args = (kw_args..., pixel_filter=values[2])
     end
     if isassigned(values, 3)
-        kw_args = (kw_args..., mip_filter=values[3])
+        kw_args = (kw_args..., pixel_min_filter=values[3])
+    end
+    if isassigned(values, 3)
+        kw_args = (kw_args..., mip_filter=values[4])
     end
     if isassigned(values, 4)
-        kw_args = (kw_args..., anisotropy=values[4])
+        kw_args = (kw_args..., anisotropy=values[5])
     end
     if isassigned(values, 5)
-        kw_args = (kw_args..., mip_offset=values[5])
+        kw_args = (kw_args..., mip_offset=values[6])
     end
     if isassigned(values, 6)
-        kw_args = (kw_args..., mip_range=values[6])
+        kw_args = (kw_args..., mip_range=values[7])
     end
     if isassigned(values, 7)
-        kw_args = (kw_args..., depth_comparison_mode=values[7])
+        kw_args = (kw_args..., depth_comparison_mode=values[8])
     end
     if isassigned(values, 8)
-        kw_args = (kw_args..., cubemap_seamless=values[8])
+        kw_args = (kw_args..., cubemap_seamless=values[9])
     end
 
     return T(; kw_args...)
@@ -132,6 +138,7 @@ end
 # The "wrapping" being a union slightly complicates equality/hashing.
 Base.:(==)(a::TexSampler{N}, b::TexSampler{N}) where {N} = (
     (a.pixel_filter == b.pixel_filter) &&
+    (a.pixel_min_filter == b.pixel_min_filter) &&
     (a.mip_filter == b.mip_filter) &&
     (a.anisotropy == b.anisotropy) &&
     (a.mip_offset == b.mip_offset) &&
@@ -154,7 +161,7 @@ Base.:(==)(a::TexSampler{N}, b::TexSampler{N}) where {N} = (
 )
 Base.hash(s::TexSampler{N}, u::UInt) where {N} = hash(
     tuple(
-        s.pixel_filter, s.mip_filter, s.anisotropy,
+        s.pixel_filter, s.mip_filter, s.pixel_min_filter, s.anisotropy,
         s.mip_offset, s.mip_range,
         s.depth_comparison_mode, s.cubemap_seamless,
         if s.wrapping isa E_WrapModes
@@ -176,7 +183,7 @@ Base.convert(::Type{TexSampler{N2}}, s::TexSampler{N1}) where {N1, N2} = TexSamp
         Vec(ntuple(i -> s.wrapping[i], Val(min(N1, N2)))...,
             ntuple(i -> WrapModes.repeat, Val(max(0, N2 - N1)))...)
     end,
-    s.pixel_filter, s.mip_filter,
+    s.pixel_filter, s.mip_filter, s.pixel_min_filter,
     s.anisotropy, s.mip_offset, s.mip_range,
     s.depth_comparison_mode,
     s.cubemap_seamless
@@ -208,7 +215,7 @@ function apply_impl( s::TexSampler{N},
     @bp_check(exists(context), "Can't apply sampler settings to a texture outside of an OpenGL context")
 
     # Set filtering.
-    gl_set_func_i(ptr, GL_TEXTURE_MIN_FILTER, get_ogl_enum(s.pixel_filter, s.mip_filter))
+    gl_set_func_i(ptr, GL_TEXTURE_MIN_FILTER, get_ogl_enum(s.pixel_min_filter, s.mip_filter))
     gl_set_func_i(ptr, GL_TEXTURE_MAG_FILTER, get_ogl_enum(s.pixel_filter))
 
     # Set anisotropy.
@@ -222,10 +229,8 @@ function apply_impl( s::TexSampler{N},
     gl_set_func_f(ptr, GL_TEXTURE_MAX_ANISOTROPY, s.anisotropy)
 
     # Set mip bias.
-    @bp_check(min_inclusive(s.mip_range) >= 1,
-              "TexSampler's mip range must start at 1 or above. The requested range is: ", s.mip_range)
-    gl_set_func_i(ptr, GL_TEXTURE_BASE_LEVEL, min_inclusive(s.mip_range) - 1)
-    gl_set_func_i(ptr, GL_TEXTURE_MAX_LEVEL, max_inclusive(s.mip_range) - 1)
+    gl_set_func_f(ptr, GL_TEXTURE_MIN_LOD, min_inclusive(s.mip_range) - 1)
+    gl_set_func_f(ptr, GL_TEXTURE_MAX_LOD, max_inclusive(s.mip_range) - 1)
     gl_set_func_f(ptr, GL_TEXTURE_LOD_BIAS, s.mip_offset)
 
     # Depth comparison.
