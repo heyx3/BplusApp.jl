@@ -48,6 +48,13 @@
         end
     end
 
+    "Removes all input bindings and resets all state"
+    service_Input_reset(s)::Nothing = begin
+        empty!(s.buttons)
+        empty!(s.axes)
+        s.current_scroll_pos = zero(v2f)
+    end
+
 
     "
     Creates a new button (throwing an error if it already exists), with the given inputs.
@@ -151,7 +158,7 @@
 end
 
 export Service_Input, service_Input_init, service_Input_shutdown,
-       service_Input_get, service_Input_exists, service_Input_update,
+       service_Input_get, service_Input_exists, service_Input_update, service_Input_reset,
        create_button, create_axis,
        remove_button, remove_axis,
        get_input, get_button, get_axis,

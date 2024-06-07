@@ -111,24 +111,24 @@ function StructTypes.construct(values::Vector{Any}, T::Type{<:TexSampler})
         kw_args = (kw_args..., pixel_filter=values[2])
     end
     if isassigned(values, 3)
-        kw_args = (kw_args..., pixel_min_filter=values[3])
-    end
-    if isassigned(values, 3)
-        kw_args = (kw_args..., mip_filter=values[4])
+        kw_args = (kw_args..., mip_filter=values[3])
     end
     if isassigned(values, 4)
-        kw_args = (kw_args..., anisotropy=values[5])
+        kw_args = (kw_args..., pixel_min_filter=values[4])
     end
     if isassigned(values, 5)
-        kw_args = (kw_args..., mip_offset=values[6])
+        kw_args = (kw_args..., anisotropy=values[5])
     end
     if isassigned(values, 6)
-        kw_args = (kw_args..., mip_range=values[7])
+        kw_args = (kw_args..., mip_offset=values[6])
     end
     if isassigned(values, 7)
-        kw_args = (kw_args..., depth_comparison_mode=values[8])
+        kw_args = (kw_args..., mip_range=values[7])
     end
     if isassigned(values, 8)
+        kw_args = (kw_args..., depth_comparison_mode=values[8])
+    end
+    if isassigned(values, 9)
         kw_args = (kw_args..., cubemap_seamless=values[9])
     end
 

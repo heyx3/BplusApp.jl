@@ -1,3 +1,9 @@
+# v0.2.1
+
+* Fix numerous bugs within `GL`
+* Add serialization helpers to the Input service:
+  * `service_Input_reset()` to reset the service to a blank slate
+
 # v0.2.0
 
 * Add GUI helpers:
