@@ -1,5 +1,7 @@
 module Input
 
+#TODO: Fix serialization, and add a serialization unit test
+
 # External dependencies
 using Setfield
 using GLFW, StructTypes, MacroTools

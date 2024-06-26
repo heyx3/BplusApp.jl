@@ -155,6 +155,25 @@
             error("No button named '", name, "'")
         end
     end
+
+    "Returns a `StructTypes`-serializable form of the currently-configured inputs"
+    function serialize_inputs(service)
+        d = Dict{Symbol, Any}()
+        for f in tuple(:buttons, :axes)
+            d[f] = getproperty(service, f)
+        end
+        return d
+    end
+    "Resets this service's inputs using the given `StructTypes`-deserialized data"
+    function deserialize_inputs(service, serialized_data::Dict{Symbol})
+        service_Input_reset(service)
+
+        for f in tuple(:buttons, :axes)
+            T = fieldtype(typeof(service), f)
+            value = StructTypes.constructfrom(T, serialized_data[f])
+            setproperty!(service, f, value)
+        end
+    end
 end
 
 export Service_Input, service_Input_init, service_Input_shutdown,
@@ -162,4 +181,5 @@ export Service_Input, service_Input_init, service_Input_shutdown,
        create_button, create_axis,
        remove_button, remove_axis,
        get_input, get_button, get_axis,
-       get_button_inputs
+       get_button_inputs,
+       serialize_inputs, deserialize_inputs

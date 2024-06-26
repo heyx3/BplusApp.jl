@@ -3,6 +3,8 @@
 * Fix numerous bugs within `GL`
 * Add serialization helpers to the Input service:
   * `service_Input_reset()` to reset the service to a blank slate
+  * `serialize_inputs()` to get the input bindings as serializable data
+  * `deserialize_inputs(dict)` to write the deserialized input data into the service
 
 # v0.2.0
 

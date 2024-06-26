@@ -16,6 +16,18 @@ struct ButtonInput
     prev_raw::Bool
 end
 ButtonInput(id::ButtonID, mode::E_ButtonModes = ButtonModes.down) = ButtonInput(id, mode, false, false)
+StructTypes.StructType(::Type{ButtonInput}) = StructTypes.CustomStruct()
+
+"Serialized form of `ButtonInput`"
+struct SerializedButtonInput
+    id::SerializedButtonID
+    mode::E_ButtonModes
+    SerializedButtonInput(b::ButtonInput) = new(SerializedButtonID(b.id), b.mode)
+end
+StructTypes.StructType(::Type{SerializedButtonInput}) = StructTypes.UnorderedStruct()
+StructTypes.lower(b::ButtonInput) = SerializedButtonInput(b)
+StructTypes.lowertype(::Type{ButtonInput}) = SerializedButtonInput
+ButtonInput(s::SerializedButtonInput) = ButtonInput(s.id.data, s.mode)
 
 function raw_input(id::ButtonID, wnd::GLFW.Window)::Bool
     if id isa GLFW.Key
@@ -73,6 +85,22 @@ AxisInput(id::AxisID, mode::E_AxisModes = AxisModes.value
           initial_raw = initial_value,
           value_scale = 1
          ) = AxisInput(id, mode, initial_value, initial_raw, value_scale)
+
+"Serialized version of `AxisInput`"
+struct SerializedAxisInput
+    id::SerializedAxisID
+    mode::E_AxisModes
+    value_scale::Float32
+    SerializedAxisInput(a::AxisInput) = new(SerializedAxisID(a.id), a.mode, a.value_scale)
+    SerializedAxisInput(id::SerializedAxisID, mode::E_AxisModes, value_scale=nothing) = new(
+        id, mode,
+        convert(Float32, isnothing(value_scale) ? 1 : value_scale)
+    )
+end
+StructTypes.StructType(::Type{AxisInput}) = StructTypes.CustomStruct()
+StructTypes.StructType(::Type{SerializedAxisInput}) = StructTypes.UnorderedStruct()
+StructTypes.lower(a::AxisInput) = SerializedAxisInput(a)
+AxisInput(s::SerializedAxisInput) = AxisInput(s.id.data, s.mode, value_scale=s.value_scale)
 
 function raw_input(id::AxisID, wnd::GLFW.Window, current_scroll::v2f)::Float32
     if id isa E_MouseAxes
