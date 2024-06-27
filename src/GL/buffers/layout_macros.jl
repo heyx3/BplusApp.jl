@@ -41,8 +41,11 @@ block_simple_type(::Type{<:AbstractOglBlock})::UnionAll = error()
 "
 Gets the total byte-size of the given struct (or array property), including padding.
 Use this instead of `sizeof()`.
+
+For convenience, falls through to `sizeof()` for non-block data types.
 "
 block_byte_size(x::AbstractOglBlock) = block_byte_size(typeof(x))
+block_byte_size(T) = isbitstype(T) ? sizeof(T) : error("Not bitstype: ", T)
 block_byte_size(T::Type{<:AbstractOglBlock}) = error("Not implemented: ", T)
 
 "Gets the amount of padding in the given struct, in bytes"
@@ -93,10 +96,12 @@ abstract type BlockArray{T, TMode<:AbstractOglBlock, TByteArray<:AbstractVector{
 struct StaticBlockArray{N, T, TMode<:AbstractOglBlock, TByteArray<:AbstractVector{UInt8}} <: BlockArray{T, TMode, TByteArray}
     buffer::TByteArray # Use same field name as the blocks themselves, for convenience
 end
+block_static_array_length(::Type{<:StaticBlockArray{N}}) where {N} = N
 block_simple_type(::Type{<:StaticBlockArray{N, T, TMode}}) where {N, T, TMode} = StaticBlockArray{N, T, TMode}
 
 
-export block_mode, block_simple_type,
+
+export block_mode, block_simple_type, block_static_array_length,
        block_byte_size, block_padding_size, block_alignment,
        block_byte_array, block_property_type, block_property_types,
        glsl_decl,

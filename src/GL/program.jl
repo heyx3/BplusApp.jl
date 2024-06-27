@@ -393,8 +393,12 @@ function Program(handle::Ptr_Program, flexible_mode::Bool = false; is_compute::B
         glGetProgramResourceName(handle,
                                  GL_SHADER_STORAGE_BLOCK, block_idx - 1,
                                  block_name_length[], C_NULL, Ref(name_c_buffer, 1))
-        # The name is null-terminated (unlike normal uniform names).
-        block_name = String(@view name_c_buffer[1 : block_name_length[]-1])
+        # For some reason, this string is sometimes null-terminated and sometimes not.
+        if iszero(name_c_buffer[block_name_length[]])
+            block_name_length[] -= 1
+        end
+        block_name = String(@view name_c_buffer[1 : block_name_length[]])
+
         storage_blocks[block_name] = ShaderBlockData(
             Ptr_ShaderBuffer(block_idx - 1),
             get_from_ogl(GLint, glGetProgramResourceiv,
@@ -416,8 +420,12 @@ function Program(handle::Ptr_Program, flexible_mode::Bool = false; is_compute::B
         block_name_length::GLsizei = 0
         @c glGetActiveUniformBlockName(handle, block_idx - 1, length(name_c_buffer),
                                        &block_name_length, &name_c_buffer[0])
-        # The name is null-terminated (unlike normal uniform names).
-        block_name = String(@view name_c_buffer[1:block_name_length-1])
+
+        # For some reason, this string is sometimes null-terminated and sometimes not.
+        if iszero(name_c_buffer[block_name_length])
+            block_name_length -= 1
+        end
+        block_name = String(@view name_c_buffer[1:block_name_length])
 
         uniform_blocks[block_name] = ShaderBlockData(
             Ptr_ShaderBuffer(block_idx - 1),
