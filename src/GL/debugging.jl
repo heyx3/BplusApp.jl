@@ -168,10 +168,18 @@ function pull_gl_logs()::Vector{OpenGLEvent}
     return output
 end
 
+"
+By default, when using `@check_gl_logs`, a very annoying spammy message about buffers is suppressed.
+Disable that by setting this var to false.
+"
+SUPPRESS_SPAMMY_LOGS::Bool = true
 
 "
 A macro to help find OpenGL issues.
 Place it before or after each OpenGL call to detect the most recent errors.
+
+By default, a very annoying spammy message about buffers is suppressed;
+    disable this by setting `GL.SUPPRESS_SPAMMY_LOGS` to false.
 "
 macro check_gl_logs(context...)
     out_msg = :( string($(esc.(context)...)) )
@@ -184,7 +192,9 @@ macro check_gl_logs(context...)
             elseif log.severity == $gl_module.DebugEventSeverities.low
                 @warn "$(out_msg()) $(sprint(show, log))"
             elseif log.severity == $gl_module.DebugEventSeverities.none
-                @info "$(out_msg()) $(sprint(show, log))"
+                if !SUPPRESS_SPAMMY_LOGS || !occursin(" will use VIDEO memory as the source for buffer object operations", log.msg)
+                    @info "$(out_msg()) $(sprint(show, log))"
+                end
             else
                 error("Unhandled case: ", log.severity)
             end

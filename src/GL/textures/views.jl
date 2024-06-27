@@ -81,7 +81,8 @@ Note that mip levels start at 1, not 0, to reflect Julia's 1-based indexing conv
 The 'layer' field allows you to pick a single layer of a 3D or cubemap texture,
     causing the view to act like a 2D texture.
 
-The 'apparent_format' field defaults to the texture's actual format.
+The 'apparent_format' field changes how the texture is interpreted in the shader;
+    it defaults to the texture's actual format.
 "
 Base.@kwdef struct SimpleViewParams
     mip_level::Int = 1

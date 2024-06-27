@@ -109,7 +109,10 @@ function gui_with_nested_id(to_do, values...)
     CImGui.PopID()
 end
 
-"Executes some GUI within a fold (what Dear ImGUI calls a 'tree node')."
+"
+Executes some GUI within a fold (what Dear ImGUI calls a 'tree node').
+If it's open, returns the output of your lambda; otherwise returns `nothing`.
+"
 function gui_within_fold(to_do, label)
     is_visible::Bool = CImGui.TreeNode(label)
     if is_visible
