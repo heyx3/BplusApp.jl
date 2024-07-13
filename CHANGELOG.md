@@ -1,3 +1,7 @@
+# v0.2.2
+
+* Cosmetic/debug-time improvements
+
 # v0.2.1
 
 * Fix numerous bugs within `GL`

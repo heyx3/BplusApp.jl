@@ -233,7 +233,8 @@ function get_buffer_data(b::Buffer, output::Ref,
               "Buffer byte range passes behind the start of the buffer: ", buffer_byte_range)
     @bp_check(max_inclusive(buffer_byte_range) <= b.byte_size,
               "Buffer byte range passes beyond the end of the buffer ",
-                "(size ", b.byte_size, "): ", buffer_byte_range)
+                "(size ", b.byte_size, ") ",
+                "(range ", min_inclusive(buffer_byte_range), " - ", max_inclusive(buffer_byte_range), ")")
     glGetNamedBufferSubData(
         b.handle,
         min_inclusive(buffer_byte_range) - 1,

@@ -192,7 +192,9 @@ macro check_gl_logs(context...)
             elseif log.severity == $gl_module.DebugEventSeverities.low
                 @warn "$(out_msg()) $(sprint(show, log))"
             elseif log.severity == $gl_module.DebugEventSeverities.none
-                if !SUPPRESS_SPAMMY_LOGS || !occursin(" will use VIDEO memory as the source for buffer object operations", log.msg)
+                if !SUPPRESS_SPAMMY_LOGS ||
+                    (!occursin(" will use VIDEO memory as the source for buffer object operations", log.msg) &&
+                     !occursin("Based on the usage hint and actual usage, buffer object ", log.msg))
                     @info "$(out_msg()) $(sprint(show, log))"
                 end
             else

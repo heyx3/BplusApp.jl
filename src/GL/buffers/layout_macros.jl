@@ -45,7 +45,13 @@ Use this instead of `sizeof()`.
 For convenience, falls through to `sizeof()` for non-block data types.
 "
 block_byte_size(x::AbstractOglBlock) = block_byte_size(typeof(x))
-block_byte_size(T) = isbitstype(T) ? sizeof(T) : error("Not bitstype: ", T)
+block_byte_size(T) = if isbitstype(T)
+    sizeof(T)
+elseif T <: StaticBlockArray
+    error("Must provide all type-parameters to `StaticBlockArray`; provided: ", T)
+else
+    error("Not bitstype: ", T)
+end
 block_byte_size(T::Type{<:AbstractOglBlock}) = error("Not implemented: ", T)
 
 "Gets the amount of padding in the given struct, in bytes"

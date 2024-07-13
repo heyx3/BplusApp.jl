@@ -36,7 +36,7 @@ export VertexDataSource, get_max_elements
 
 "Pulls data out of the elements of a VertexDataSource"
 struct VertexAttribute
-    # A reference to the VertexDataSource, as its index in some list.
+    # A reference to the VertexDataSource, as its index in some list (with 1-based indexing).
     data_source_idx::Int
     # The byte offset from each element of the VertexDataSource
     #    to the specific field inside it.
