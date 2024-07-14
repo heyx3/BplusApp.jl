@@ -1,6 +1,9 @@
 # v0.2.2
 
 * Cosmetic/debug-time improvements
+* GUI helper functions:
+  * Add more flexible parameters
+  * Fix API bugs
 
 # v0.2.1
 

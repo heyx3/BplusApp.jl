@@ -190,8 +190,8 @@ end
 Groups a GUI together into a smaller window.
 Returns the output of 'to_do()', or `nothing` if the window is closed.
 "
-function gui_within_child_window(to_do, size, flags=0)::Optional
-    is_open = CImGui.BeginChildFrame(size, flags)
+function gui_within_child_window(to_do, id, size, flags=0)::Optional
+    is_open = CImGui.BeginChildFrame(id, size, flags)
     try
         if is_open
             return to_do()
@@ -261,13 +261,31 @@ export gui_spherical_vector
 
 ##  Small helper functions  ##
 
-"Sizes the next CImGui window in terms of a percentage of the actual window's size"
-function gui_next_window_space(uv_space::Box2Df; window_size::v2i = get_window_size(get_context()))
-    pos = window_size * min_inclusive(uv_space)
-    w_size = window_size * size(uv_space)
+"
+Sizes the next CImGui window in terms of a percentage of the actual window's size,
+  optionally with a pixel-space border padding it inwards.
+"
+function gui_next_window_space(uv_space::Box2Df,
+                               min_and_max_pixel_border::v2i = zero(v2i),
+                               min_only_pixel_border::v2i = zero(v2i)
+                               ;
+                               window_size::v2i = get_window_size(get_context()))
+    # Remove the padding from the reported window size.
+    window_size -= min_and_max_pixel_border * v2i(2, 2)
+    window_size -= min_only_pixel_border
+    w_size::v2f = window_size * size(uv_space)
+
+    # Add the padding to the calculated position.
+    pos::v2f = (window_size * min_inclusive(uv_space)) +
+               convert(v2f, min_only_pixel_border + min_and_max_pixel_border)
 
     CImGui.SetNextWindowPos(CImGui.ImVec2(pos...))
     CImGui.SetNextWindowSize(CImGui.ImVec2(w_size...))
+end
+"Sizes the next CImGui window in terms of a pixel rectangle"
+function gui_next_window_space(pixel_space::Box2Di; window_size::v2i = get_window_size(get_context()))
+    CImGui.SetNextWindowPos(CImGui.ImVec2(min_inclusive(pixel_space)...))
+    CImGui.SetNextWindowSize(CImGui.ImVec2(size(pixel_space...)))
 end
 
 export gui_next_window_space
