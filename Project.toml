@@ -30,7 +30,7 @@ TupleTools = "9d95972d-f1c8-5527-a6e0-b4b365fa01f6"
 
 [compat]
 BitFlags = "0.1"
-BplusCore = "0.2.0"
+BplusCore = "0.2.1"
 CBinding = "1.0"
 CImGui = "=1.82.0"
 CSyntax = "0.4"
