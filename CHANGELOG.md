@@ -1,15 +1,11 @@
-# v0.2.2
+# v0.2.1
 
+* Fix numerous bugs within `GL`
 * Cosmetic/debug-time improvements
 * GUI helper functions:
   * Add more flexible parameters
   * Fix API bugs
-
-# v0.2.1
-
-* Fix numerous bugs within `GL`
-* Add serialization helpers to the Input service:
-  * `service_Input_reset()` to reset the service to a blank slate
+* `service_Input_reset()` to reset the service to a blank slate
 
 # v0.2.0
 
