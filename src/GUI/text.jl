@@ -5,11 +5,13 @@ Run the GUI with `gui_text!()` and get the current string with `string()`.
 Update the value externally with `update!()`.
 "
 Base.@kwdef mutable struct GuiText
+    # Provided as the first argument to the constructor.
     raw_value::InteropString
 
+    # Provided as named arguments to the constructor.
     label::String = ""
     is_multiline::Bool = false
-    multiline_requested_size::NTuple{2, Integer} = (0, 0)
+    multiline_requested_size::NTuple{2, Int} = (0, 0)
     imgui_flags::Integer = 0x00000
 
     # Internal; leave these alone
