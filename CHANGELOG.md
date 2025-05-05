@@ -1,3 +1,7 @@
+# v0.3.0
+
+\[none, just syncing with BplusCore's updates]
+
 # v0.2.1
 
 * Fix numerous bugs within `GL`
