@@ -65,7 +65,7 @@ bp_gl_context( v2i(800, 500), "Compute tests: SSBO",
     #    then check that they line up.
     GROUP_SIZE = v2u(8, 8)
     RESOLUTION = GROUP_SIZE * v2u(5, 8)
-    zero_based_idcs = 0 : convert(v2u, RESOLUTION - 1)
+    zero_based_idcs = [ (0 : convert(v2u, RESOLUTION - 1))... ]
     array = fill(zero(v2f), (RESOLUTION.data...))
     buf = Buffer(false, fill(-one(v2f), (prod(RESOLUTION), )))
     check_gl_logs("After creating compute Buffer")
@@ -146,7 +146,7 @@ bp_gl_context( v2i(800, 500), "Compute tests: SSBO",
 
     #  1:
     #   a. CPU array:
-    texel = @f32(1) / vsize(array)
+    texel::v2f = @f32(1) / vsize(array)
     map!(pixel::Vec2 -> (pixel * texel)::v2f, array, zero_based_idcs)
     #   b. GPU buffer:
     set_storage_block(buf, 1)
@@ -201,7 +201,7 @@ bp_gl_context( v2i(800, 500), "Compute tests: 3D layered Image View",
 
     GROUP_SIZE = v3u(8, 4, 2)
     RESOLUTION = GROUP_SIZE * v3u(5, 8, 1)
-    zero_based_idcs = UInt32(0) : (RESOLUTION - UInt32(1))
+    zero_based_idcs = [ (UInt32(0) : (RESOLUTION - UInt32(1)))... ]
 
     #  1. Generate color based on global and local UV's.
     cpu_compute1(idcs_zero) = let arr = fill(zero(v4f), RESOLUTION...)
@@ -397,7 +397,7 @@ bp_gl_context( v2i(800, 500), "Compute tests: 3D non-layered Image View",
     GROUP_SIZE_2D = Vec(GROUP_SIZE, GROUP_SIZE)
     RESOLUTION = GROUP_SIZE * 4
     RESOLUTION_2D = Vec(RESOLUTION, RESOLUTION)
-    zero_based_idcs = UInt32(0) : vappend(RESOLUTION_2D - UInt32(1), UInt32(0))
+    zero_based_idcs = [ (UInt32(0) : vappend(RESOLUTION_2D - UInt32(1), UInt32(0)))... ]
 
     #  1. Generate color based on global and local UV's.
     cpu_compute1(idcs_zero) = let arr = fill(v4f(i->NaN32), RESOLUTION_2D..., 1)
@@ -606,7 +606,7 @@ bp_gl_context( v2i(800, 500), "Compute tests: Cubemap layered Image View",
     RESOLUTION = GROUP_SIZE * 4
     RESOLUTION_2D = Vec(RESOLUTION, RESOLUTION)
     RESOLUTION_3D = Vec(RESOLUTION, RESOLUTION, 6)
-    zero_based_idcs = UInt32(0) : (RESOLUTION_3D - UInt32(1))
+    zero_based_idcs = [ (UInt32(0) : (RESOLUTION_3D - UInt32(1)))... ]
 
     #  1. Generate color based on global and local UV's.
     cpu_compute1(idcs_zero) = let arr = fill(zero(v4f), RESOLUTION_3D...)
@@ -806,7 +806,7 @@ bp_gl_context( v2i(800, 500), "Compute tests: Cubemap non-layered Image View",
     GROUP_SIZE_2D = Vec(GROUP_SIZE, GROUP_SIZE)
     RESOLUTION = GROUP_SIZE * 4
     RESOLUTION_2D = Vec(RESOLUTION, RESOLUTION)
-    zero_based_idcs = UInt32(0) : (RESOLUTION_2D - UInt32(1))
+    zero_based_idcs = [ (UInt32(0) : (RESOLUTION_2D - UInt32(1)))... ]
 
     #  1. Generate color based on global and local UV's.
     cpu_compute1(idcs_zero) = let arr = fill(v4f(i->NaN32), RESOLUTION_2D...)
