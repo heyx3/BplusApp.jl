@@ -96,7 +96,7 @@ A Context service which defines a bunch of useful GL resources:
     end
 
     "
-    Renders the given texure, using the given screen-screen_quad transform
+    Renders the given texure, using the given screen_quad transform
         and the given color transform on the texture's pixels.
     "
     function simple_blit(service,
