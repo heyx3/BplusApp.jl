@@ -1,7 +1,8 @@
 "
 Encapsulates a Dear ImGUI text editor.
 
-Run the GUI with `gui_text!()` and get the current string with `string()`.
+Run the GUI with `gui_text!()`.
+Get the current string with `string()` (this is a cheap operation).
 Update the value externally with `update!()`.
 "
 Base.@kwdef mutable struct GuiText

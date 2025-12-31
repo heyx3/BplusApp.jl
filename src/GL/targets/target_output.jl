@@ -23,7 +23,7 @@ function Base.show(io::IO, o::TargetOutput)
         print(io, "A ")
     end
 
-    print(io, tex.type, " texture")
+    print(io, o.tex.type, " texture")
 
     if o.layer isa Nothing
         # Print nothing in this case.

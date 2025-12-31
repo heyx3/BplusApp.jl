@@ -1,3 +1,8 @@
+# v0.3.2
+
+* Fix bugs with Targets and BasicGraphics service
+* Update CImGui version to fix bugs with it
+
 # v0.3.0
 
 \[none, just syncing with BplusCore's updates]

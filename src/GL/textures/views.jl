@@ -33,7 +33,8 @@ function view_activate(view::View, simple_access::E_ImageAccessModes = ImageAcce
     # It's not clear at all in the standard what happens if you make an ImageView resident
     #    more than once, with different access modes.
     # So I just forbid duplicate activations altogether.
-    @bp_check(!view.is_active, "Can't activate a view twice!")
+    @bp_check(!view.is_active,
+              "Can't activate a view twice! There's no telling what happens if you do it with different flags")
     @bp_check(get_ogl_handle(view.owner) != Ptr_Texture(),
               "This view's owning texture has been destroyed")
     if !view.is_active

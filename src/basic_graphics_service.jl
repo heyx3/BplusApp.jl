@@ -111,8 +111,9 @@ A Context service which defines a bunch of useful GL resources:
         context = get_context()
 
         tex_view = (tex isa View) ? tex : get_view(tex)
-        if manage_tex_view
-            was_active::Bool = tex_view.is_active
+        wrap_tex_activation::Bool = false
+        if manage_tex_view && !tex_view.is_active
+            wrap_tex_activation = true
             view_activate(tex_view)
         end
 
@@ -133,7 +134,7 @@ A Context service which defines a bunch of useful GL resources:
                         service.screen_quad,
                     service.blit)
 
-        if manage_tex_view && !was_active
+        if wrap_tex_activation
             view_deactivate(tex_view)
         end
 

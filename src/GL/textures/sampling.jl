@@ -69,7 +69,7 @@ end
 "Information about a sampler for an N-dimensional texture"
 @kwdef struct TexSampler{N}
     # The wrapping mode along each individual axis.
-    # This settings means nothing for cubemap textures.
+    # This setting means nothing for cubemap textures.
     wrapping::Union{E_WrapModes, Vec{N, E_WrapModes}} = WrapModes.repeat
 
     pixel_filter::E_PixelFilters = PixelFilters.smooth

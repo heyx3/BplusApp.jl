@@ -336,7 +336,7 @@ function target_configure_fragment_outputs(target::Target, slots::AbstractVector
     append!(target.color_render_slots, slots)
 
     # Tell OpenGL about the new list.
-    empty!(target.gl_buf_color_attachments)
+    empty!(target.gl_buf_color_render_slots)
     append!(target.gl_buf_color_render_slots, Iterators.map(slots) do slot
         if isnothing(slot)
             GL_NONE
@@ -345,8 +345,8 @@ function target_configure_fragment_outputs(target::Target, slots::AbstractVector
         end
     end)
     glNamedFramebufferDrawBuffers(get_ogl_handle(target),
-                                  length(target.gl_buf_color_attachments),
-                                  Ref(target.gl_buf_color_attachments, 1))
+                                  length(target.gl_buf_color_render_slots),
+                                  Ref(target.gl_buf_color_render_slots, 1))
 end
 
 "
