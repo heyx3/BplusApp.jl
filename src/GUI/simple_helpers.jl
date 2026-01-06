@@ -1,4 +1,18 @@
-##  Blocks of temporary GUI state  ##
+#################################
+##    Helpers for GUI functions
+
+"Dear ImGUI colors can be a U32 hex code, or RGB[A] floats between 0 and 1"
+const GuiColor = Union{UInt32, gVec4, Vec3, Vec4}
+gui_color_to_im_color(u::UInt32) = u
+gui_color_to_im_color(v::gVec4) = v
+gui_color_to_im_color(v::Vec3) = gVec4(v..., 1)
+gui_color_to_im_color(v::Vec4) = gVec4(v...)
+
+export GuiColor
+
+
+###########################################
+##    Push->Lambda->Pop GUI state helpers
 
 "
 Nests some GUI code within a window.
@@ -389,6 +403,179 @@ function gui_next_window_space(pixel_space::Box2Di; window_size::v2i = get_windo
     CImGui.SetNextWindowSize(gVec2(size(pixel_space...)))
 end
 
-end
-
 export gui_next_window_space
+
+
+
+##############################
+##    GUI drawing helpers
+
+struct GuiDrawBorder
+    border::GuiColor
+end
+struct GuiDrawFilled
+    fill::GuiColor
+end
+const GuiDrawSimpleColorType = Union{GuiDrawBorder, GuiDrawFilled}
+
+struct GuiDrawMultiColor
+    top_left::GuiColor
+    top_right::GuiColor
+    bottom_left::GuiColor
+    bottom_right::GuiColor
+end
+const GuiDrawColorType = Union{GuiDrawSimpleColorType, GuiDrawMultiColor}
+
+
+"
+Drawing coordinates (e.g. `TArea=Box2Df` for drawing boxes) that are relative
+  to Dear ImGUI's current layout position (a.k.a. its Cursor pos).
+
+You can also ask to emit a Dummy widget
+  from the cursor to the bottom/right of the drawn object.
+"
+struct GuiDrawCursorRelative{TArea}
+    area::TArea
+    emit_dummy::v2b
+
+    GuiDrawCursorRelative{TArea}(area, emit_dummy::Union{Bool, Vec2}) where {TArea} = new{TArea}(
+        convert(TArea, area),
+        if emit_dummy isa Bool
+            v2b(emit_dummy, emit_dummy)
+        else
+            convert(v2b, emit_dummy)
+        end
+    )
+    GuiDrawCursorRelative(area, emit_dummy::Union{Bool, Vec2}) = new{typeof(area)}(
+        area,
+        if emit_dummy isa Bool
+            v2b(emit_dummy, emit_dummy)
+        else
+            convert(v2b, emit_dummy)
+        end
+    )
+end
+"Absolute or relative coordinates for some drawing operation"
+const GuiDrawCoords{TArea} = Union{TArea, GuiDrawCursorRelative{TArea}}
+
+
+function gui_draw_line(coords::GuiDrawCoords{NTuple{2, v2f}},
+                       color::GuiColor,
+                       in_background::Bool = false
+                       ;
+                       thickness::Float64 = 1.0)
+    draw_list = in_background ? CImGui.GetBackgroundDrawList() : CImGui.GetForegroundDrawList()
+
+    # Get absolute draw coordinates.
+    cursor_pos = convert(v2f, CImGui.GetCursorScreenPos())
+    (final_coords, is_relative)::Tuple{NTuple{2, v2f}, Bool} =
+        if coords isa GuiDrawCursorRelative
+            (coords.area, true)
+        else
+            (coords, false)
+        end
+    if is_relative
+        final_coords = final_coords .+ convert(v2f, cursor_pos)
+    end
+    g_final_coords = convert.(Ref(gVec2), final_coords)
+
+    CImGui.AddLine(draw_list, g_final_coords..., gui_color_to_im_color(color), thickness)
+
+    # If desired, insert a dummy widget to cover this shape.
+    if is_relative
+        CImGui.Dummy((
+            coords.emit_dummy * (max(final_coords...) - cursor_pos)
+        )...)
+    end
+end
+function gui_draw_rect(coords::GuiDrawCoords{Box2Df},
+                       color::GuiDrawColorType
+                       ;
+                       in_background::Bool = false,
+                       # Border Thickness is only used if drawing with `GuiDrawBorder`.
+                       border_thickness::Float64 = 1.0,
+                       # Corner rounding is not used with MultiColor.
+                       corner_roundedness::Float64 = 0.0,
+                       corners_to_round::CImGui.LibCImGui.ImDrawFlags_ = CImGui.LibCImGui.ImDrawFlags_RoundCornersAll)
+    draw_list = in_background ? CImGui.GetBackgroundDrawList() : CImGui.GetForegroundDrawList()
+
+    # Get absolute draw coordinates.
+    cursor_pos = convert(v2f, CImGui.GetCursorScreenPos())
+    (area::Box2Df, is_relative::Bool) =
+        if coords isa GuiDrawCursorRelative
+            (coords.area, true)
+        else
+            (coords, false)
+        end
+    rect_corners::NTuple{2, v2f} = (min_inclusive(area), max_inclusive(area))
+    if is_relative
+        rect_corners = map(c-> c+cursor_pos, rect_corners)
+    end
+    g_rect_corners = convert.(Ref(gVec2), rect_corners)
+
+    # Get the color/fill type, and dispatch.
+    if color isa GuiDrawBorder
+        CImGui.AddRect(draw_list, g_rect_corners..., gui_color_to_im_color(color.border),
+                       corner_roundedness, corners_to_round, border_thickness)
+    elseif color isa GuiDrawFilled
+        CImGui.AddRectFilled(draw_list, g_rect_corners..., gui_color_to_im_color(color.fill),
+                             corner_roundedness, corners_to_round)
+    elseif color isa GuiDrawMultiColor
+        CImGui.AddRectFilledMultiColor(draw_list, g_rect_corners...,
+                                       gui_color_to_im_color.((color.top_left, color.top_right, color.bottom_left, color.bottom_right)))
+    else
+        error("Unhandled: ", typeof(color))
+    end
+
+    # If desired, insert a dummy widget to cover this shape.
+    if is_relative
+        CImGui.Dummy((
+            coords.emit_dummy * (max(rect_corners...) - cursor_pos)
+        )...)
+    end
+end
+"Draws an arbitrary 4-sided shape"
+function gui_draw_quad(coords::GuiDrawCoords{NTuple{4, v2f}},
+                       color::GuiDrawSimpleColorType
+                       ;
+                       in_background::Bool = false,
+                       # Border Thickness is only used if drawing with `GuiDrawBorder`.
+                       border_thickness::Float64 = 1.0)
+    draw_list = in_background ? CImGui.GetBackgroundDrawList() : CImGui.GetForegroundDrawList()
+
+    # Get absolute draw coordinates.
+    cursor_pos = convert(v2f, CImGui.GetCursorScreenPos())
+    (corners::NTuple{4, v2f}, is_relative::Bool) =
+        if coords isa GuiDrawCursorRelative
+            (coords.area, true)
+        else
+            (coords, false)
+        end
+    if is_relative
+        corners = map(c-> c+cursor_pos, corners)
+    end
+    g_corners = convert.(Ref(gVec2), corners)
+
+    # Get the color/fill type, and dispatch.
+    if color isa GuiDrawBorder
+        CImGui.AddQuad(draw_list, g_corners..., gui_color_to_im_color(color.border),
+                       corner_roundedness, corners_to_round, border_thickness)
+    elseif color isa GuiDrawFilled
+        CImGui.AddQuadFilled(draw_list, g_corners..., gui_color_to_im_color(color.fill),
+                             corner_roundedness, corners_to_round)
+    else
+        error("Unhandled: ", typeof(color))
+    end
+
+    # If desired, insert a dummy widget to cover this shape.
+    if is_relative
+        CImGui.Dummy((
+            coords.emit_dummy * (max(corners...) - cursor_pos)
+        )...)
+    end
+end
+#TODO: All the other draw-list primitives
+
+export gui_draw_line, gui_draw_rect, gui_draw_quad,
+       GuiDrawBorder, GuiDrawFilled, GuiDrawMultiColor,
+       GuiDrawCursorRelative
