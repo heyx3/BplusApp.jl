@@ -28,7 +28,7 @@ See: https://pixtur.github.io/mkdocs-for-imgui/site/api-imgui/ImGui--Dear-ImGui-
 * ==0.0f: default to ~⅔ of windows width
 "
 function gui_with_item_width(to_do, width::Real)
-    CImGui.PushItemWidth(Float32(width))
+    CImGui.PushItemWidth(convert(Float32, width))
     try
         return to_do()
     finally
@@ -46,6 +46,80 @@ function gui_with_indentation(to_do, width::Optional{Real} = nothing)
     end
 end
 
+"
+Adds a tooltip to the previous widget/group,
+  conditionally-executing your lambda to fill in the tooltip's GUI.
+
+Returns `nothing` if the tooltip isn't open; otherwise returns `Some(x)`
+  where `x` is the returned value from your lambda.
+"
+function gui_tooltip(to_do)::Optional{Some}
+    if CImGui.IsItemHovered(CImGui.LibCImGui.ImGuiHoveredFlags_AllowWhenDisabled)
+       CImGui.BeginTooltip()
+        try
+            return Some(to_do())
+        finally
+            CImGui.EndTooltip()
+        end
+    end
+
+    return nothing
+end
+"
+Adds a plaintext tooltip to the previous widget/group, optionally using text wrapping,
+  and returns whether the tooltip was open.
+"
+function gui_tooltip(label::String,
+                     wrap_size::Real = CImGui.GetFontSize() * 40)::Bool
+    return exists(gui_tooltip() do
+        gui_with_text_wrap(wrap_size) do
+            CImGui.TextUnformatted(label)
+        end
+    end)
+end
+
+function gui_with_style(to_do, var::CImGui.LibCImGui.ImGuiStyleVar,
+                               value::Union{Real, Vec2, gVec2, Tuple{Any, Any}})
+    CImGui.PushStyleVar(var,
+        if value isa Real
+            value
+        elseif value isa Vec2
+            value.data
+        elseif value isa Tuple
+            convert.(Ref(Float32), value)
+        else
+            error("Unhandled: ", typeof(value))
+        end
+    )
+    try
+        to_do()
+    finally
+        CImGui.PopStyleVar()
+    end
+end
+"Color can be provided as a U32 hex color, or 3/4 floats between 0 and 1"
+function gui_with_style(to_do, color_idx::CImGui.LibCImGui.ImGuiCol_,
+                               color::Union{UInt32, Vec3, Vec4, gVec4})
+    CImGui.PushStyleColor(color_idx,
+        if color isa UInt32
+            color
+        elseif color isa Vec3
+            gVec4(v4f(color..., 1)...)
+        elseif color isa Vec4
+            gVec4(convert(v4f, color)...)
+        elseif color isa gVec4
+            color
+        else
+            error("Unhandled: ", typeof(color))
+        end
+    )
+    try
+        to_do()
+    finally
+        CImGui.PopStyleColor()
+    end
+end
+
 function gui_with_padding(to_do, padding...)
     CImGui.PushStyleVar(CImGui.ImGuiStyleVar_WindowPadding, padding...)
     try
@@ -55,14 +129,37 @@ function gui_with_padding(to_do, padding...)
     end
 end
 
+"
+Sets the text wrapping amount (i.e the horizontal postion where it wraps).
+
+NaN or negative values disable wrapping.
+Inf or 0 makes it wrap at the very end of the content area.
+"
+function gui_with_text_wrap(to_do, wrapping::Real=Inf)
+    CImGui.PushTextWrapPos(
+        if isnan(wrapping)
+            -1.0f0
+        elseif isinf(wrapping)
+            0.0f0
+        else
+            convert(Float32, wrapping)
+        end
+    )
+    try
+        to_do()
+    finally
+        CImGui.PopTextWrapPos()
+    end
+end
+
 function gui_with_clip_rect(to_do,
                             rect::Box2Df, intersect_with_current_rect::Bool,
                             draw_list::Optional{Ptr{LibCImGui.ImDrawList}} = nothing
                             #TODO: Param for using world space (call different CImGui func)
                             )
     CImGui.PushClipRect(@optional(exists(draw_list), draw_list),
-                        CImGui.ImVec2(min_inclusive(rect)...),
-                        CImGui.ImVec2(max_exclusive(rect)...),
+                        gVec2(min_inclusive(rect)...),
+                        gVec2(max_exclusive(rect)...),
                         intersect_with_current_rect)
     try
         return to_do()
@@ -126,15 +223,6 @@ function gui_within_fold(to_do, label)
     return nothing
 end
 
-"Executes some GUI with a different 'style color'."
-function gui_with_style_color(to_do,
-                              index::CImGui.LibCImGui.ImGuiCol_,
-                              color::Union{Integer, CImGui.ImVec4})
-    CImGui.PushStyleColor(index, color)
-    to_do()
-    CImGui.PopStyleColor()
-end
-
 "
 Groups widgets together for placement within larger layouts
     (such as a vertical group within a horizontal line).
@@ -191,6 +279,10 @@ Groups a GUI together into a smaller window.
 Returns the output of 'to_do()', or `nothing` if the window is closed.
 "
 function gui_within_child_window(to_do, id, size, flags=0)::Optional
+    if id isa String
+        return gui_within_child_window(to_do, CImGui.GetID(id), size, flags)
+    end
+
     is_open = CImGui.BeginChildFrame(id, size, flags)
     try
         if is_open
@@ -203,10 +295,10 @@ function gui_within_child_window(to_do, id, size, flags=0)::Optional
     return nothing
 end
 
-export gui_with_item_width, gui_with_indentation, gui_with_clip_rect, gui_with_padding,
-       gui_with_unescaped_tabbing, gui_with_style_color, gui_with_font, gui_with_nested_id,
+export gui_with_item_width, gui_with_indentation, gui_with_clip_rect, gui_with_padding, gui_with_text_wrap,
+       gui_with_unescaped_tabbing, gui_with_style, gui_with_font, gui_with_nested_id, gui_tooltip,
        gui_window, gui_within_fold, gui_within_group, gui_tab_views, gui_tab_item, gui_within_child_window
-#
+#aa
 
 
 ##  Custom editors  ##
@@ -262,30 +354,41 @@ export gui_spherical_vector
 ##  Small helper functions  ##
 
 "
-Sizes the next CImGui window in terms of a percentage of the actual window's size,
-  optionally with a pixel-space border padding it inwards.
+Sizes the next CImGui window in terms of a percentage of the actual window's size.
+
+Optionally adds a pixel-space border, padding it inwards.
+Optionally clamps the pixel size (by moving the max corner).
 "
 function gui_next_window_space(uv_space::Box2Df,
                                min_and_max_pixel_border::v2i = zero(v2i),
                                min_only_pixel_border::v2i = zero(v2i)
                                ;
+                               min_pixel_size::v2i = zero(v2i),
+                               max_pixel_size::v2i = -one(v2i),
                                window_size::v2i = get_window_size(get_context()))
     # Remove the padding from the reported window size.
     window_size -= min_and_max_pixel_border * v2i(2, 2)
     window_size -= min_only_pixel_border
     w_size::v2f = window_size * size(uv_space)
+    w_size = clamp(
+        w_size,
+        min_pixel_size,
+        vselect(max_pixel_size, typemax(v2i), max_pixel_size < 0)
+    )
 
     # Add the padding to the calculated position.
     pos::v2f = (window_size * min_inclusive(uv_space)) +
                convert(v2f, min_only_pixel_border + min_and_max_pixel_border)
 
-    CImGui.SetNextWindowPos(CImGui.ImVec2(pos...))
-    CImGui.SetNextWindowSize(CImGui.ImVec2(w_size...))
+    CImGui.SetNextWindowPos(gVec2(pos...))
+    CImGui.SetNextWindowSize(gVec2(w_size...))
 end
 "Sizes the next CImGui window in terms of a pixel rectangle"
 function gui_next_window_space(pixel_space::Box2Di; window_size::v2i = get_window_size(get_context()))
-    CImGui.SetNextWindowPos(CImGui.ImVec2(min_inclusive(pixel_space)...))
-    CImGui.SetNextWindowSize(CImGui.ImVec2(size(pixel_space...)))
+    CImGui.SetNextWindowPos(gVec2(min_inclusive(pixel_space)...))
+    CImGui.SetNextWindowSize(gVec2(size(pixel_space...)))
+end
+
 end
 
 export gui_next_window_space
