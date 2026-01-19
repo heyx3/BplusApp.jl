@@ -111,7 +111,7 @@ function gui_with_style(to_do, var::CImGui.LibCImGui.ImGuiStyleVar,
         CImGui.PopStyleVar()
     end
 end
-"Color can be provided as a U32 hex color, or 3/4 floats between 0 and 1"
+"Color can be provided as a U32 hex code, or 3/4 floats between 0 and 1"
 function gui_with_style(to_do, color_idx::CImGui.LibCImGui.ImGuiCol_,
                                color::Union{UInt32, Vec3, Vec4, gVec4})
     CImGui.PushStyleColor(color_idx,
@@ -410,6 +410,25 @@ export gui_next_window_space
 ##############################
 ##    GUI drawing helpers
 
+# Standard locations where primitives can be drawn with Dear ImGUI.
+@bp_enum(GuiDrawingCanvas,
+    current_window,
+    background, foreground
+)
+get_gui_drawing_canvas(c::E_GuiDrawingCanvas)::Ptr{CImGui.ImDrawList} =
+    if c == GuiDrawingCanvas.current_window
+        CImGui.GetWindowDrawList()
+    elseif c == GuiDrawingCanvas.background
+        CImGui.GetBackgroundDrawList()
+    elseif c == GuiDrawingCanvas.foreground
+        CImGui.GetForegroundDrawList()
+    else
+        error("Unhandled: ", c)
+    end
+
+const GuiDrawingDestination = Union{E_GuiDrawingCanvas, Ptr{CImGui.ImDrawList}}
+get_gui_drawing_canvas(ptr::Ptr{CImGui.ImDrawList}) = ptr
+
 struct GuiDrawBorder
     border::GuiColor
 end
@@ -459,12 +478,20 @@ end
 const GuiDrawCoords{TArea} = Union{TArea, GuiDrawCursorRelative{TArea}}
 
 
+function gui_get_draw_clip_area(canvas::GuiDrawingDestination = GuiDrawingCanvas.current_window)::Box2Df
+    draw_list = get_gui_drawing_canvas(canvas)
+    return Box2Df(
+        min=convert(v2f, CImGui.GetClipRectMin(draw_list)),
+        max=convert(v2f, CImGui.GetClipRectMax(draw_list))
+    )
+end
+
 function gui_draw_line(coords::GuiDrawCoords{NTuple{2, v2f}},
                        color::GuiColor,
-                       in_background::Bool = false
+                       canvas::GuiDrawingDestination = GuiDrawingCanvas.current_window
                        ;
                        thickness::Float64 = 1.0)
-    draw_list = in_background ? CImGui.GetBackgroundDrawList() : CImGui.GetForegroundDrawList()
+    draw_list = get_gui_drawing_canvas(canvas)
 
     # Get absolute draw coordinates.
     cursor_pos = convert(v2f, CImGui.GetCursorScreenPos())
@@ -491,13 +518,13 @@ end
 function gui_draw_rect(coords::GuiDrawCoords{Box2Df},
                        color::GuiDrawColorType
                        ;
-                       in_background::Bool = false,
+                       canvas::GuiDrawingDestination = GuiDrawingCanvas.current_window,
                        # Border Thickness is only used if drawing with `GuiDrawBorder`.
                        border_thickness::Float64 = 1.0,
                        # Corner rounding is not used with MultiColor.
                        corner_roundedness::Float64 = 0.0,
                        corners_to_round::CImGui.LibCImGui.ImDrawFlags_ = CImGui.LibCImGui.ImDrawFlags_RoundCornersAll)
-    draw_list = in_background ? CImGui.GetBackgroundDrawList() : CImGui.GetForegroundDrawList()
+    draw_list = get_gui_drawing_canvas(canvas)
 
     # Get absolute draw coordinates.
     cursor_pos = convert(v2f, CImGui.GetCursorScreenPos())
@@ -538,10 +565,10 @@ end
 function gui_draw_quad(coords::GuiDrawCoords{NTuple{4, v2f}},
                        color::GuiDrawSimpleColorType
                        ;
-                       in_background::Bool = false,
+                       canvas::GuiDrawingDestination = GuiDrawingCanvas.current_window,
                        # Border Thickness is only used if drawing with `GuiDrawBorder`.
                        border_thickness::Float64 = 1.0)
-    draw_list = in_background ? CImGui.GetBackgroundDrawList() : CImGui.GetForegroundDrawList()
+    draw_list = get_gui_drawing_canvas(canvas)
 
     # Get absolute draw coordinates.
     cursor_pos = convert(v2f, CImGui.GetCursorScreenPos())
@@ -577,5 +604,7 @@ end
 #TODO: All the other draw-list primitives
 
 export gui_draw_line, gui_draw_rect, gui_draw_quad,
+       gui_get_draw_clip_area,
+       GuiDrawingCanvas, E_GuiDrawingCanvas,
        GuiDrawBorder, GuiDrawFilled, GuiDrawMultiColor,
        GuiDrawCursorRelative

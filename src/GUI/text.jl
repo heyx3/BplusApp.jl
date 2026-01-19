@@ -42,7 +42,7 @@ function gui_text!(t::GuiText)::Bool
                     resize!(t.raw_value.c_buffer, desired_size * 2)
                 end
             elseif data.EventFlag == CImGui.ImGuiInputTextFlags_CallbackCompletion
-                println("Completed!")
+                # Editing completed!
             else
                 println("Other event: ", data.EventFlag)
             end

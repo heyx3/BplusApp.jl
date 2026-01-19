@@ -1,6 +1,8 @@
 # v0.3.2
 
-* Fix bugs with Targets and BasicGraphics service
+* Add Dear ImGUI drawing helpers to GUI module
+* Add more device info to `GL.Device`
+* Fix bugs with Targets, BasicGraphics service, and GUI service
 * Update CImGui version to fix bugs with it
 
 # v0.3.0

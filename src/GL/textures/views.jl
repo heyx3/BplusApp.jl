@@ -171,7 +171,7 @@ export SimpleViewParams, ViewParams,
 Creates a new sampled view from the given texture and optional sampler.
 If no sampler is given, the texture's default sampler settings are used.
 
-IMPORTANT: users shouldn't ever be creating these by hand;
+IMPORTANT: users shouldn't ever create these by hand;
     they should come from the Texture interfae.
 "
 function View(owner::AbstractResource, sampler::Optional{TexSampler})
@@ -194,7 +194,7 @@ end
 "
 Creates a new simple view on a texture.
 
-IMPORTANT: users shouldn't ever be creating these by hand;
+IMPORTANT: users shouldn't ever create these by hand;
     they should come from the Texture interface.
 "
 function View(owner::AbstractResource, owner_format::TexFormat, params::SimpleViewParams)

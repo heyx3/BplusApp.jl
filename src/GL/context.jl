@@ -50,6 +50,15 @@ struct Device
     max_uniform_components_in_fragment_shader::Int
     #TODO: Other shader types
 
+    # The max number of total textures that can be bound across all stages of a shader program.
+    max_bound_textures::Int
+    # The max number of textures that can be bound in a vertex shader.
+    max_bound_vertex_textures::Int
+    # The max number of textures that can be bound in a geometry shader.
+    max_bound_geometry_textures::Int
+    # The max number of textures that can be bound in a fragment shader.
+    max_bound_fragment_textures::Int
+
     # The maximum byte size of a UBO.
     max_uniform_block_byte_size::Int
     # The number of available UBO slots for programs to share.
@@ -90,6 +99,10 @@ function Device(window::GLFW.Window)
                       get_from_ogl(GLint, glGetIntegeri_v, GL_MAX_COMPUTE_WORK_GROUP_COUNT, 2)),
                   get_from_ogl(GLint, glGetIntegerv, GL_MAX_VERTEX_UNIFORM_COMPONENTS),
                   get_from_ogl(GLint, glGetIntegerv, GL_MAX_FRAGMENT_UNIFORM_COMPONENTS),
+                  get_from_ogl(GLint, glGetIntegerv, GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS),
+                  get_from_ogl(GLint, glGetIntegerv, GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS),
+                  get_from_ogl(GLint, glGetIntegerv, GL_MAX_GEOMETRY_TEXTURE_IMAGE_UNITS),
+                  get_from_ogl(GLint, glGetIntegerv, GL_MAX_TEXTURE_IMAGE_UNITS),
                   get_from_ogl(GLint, glGetIntegerv, GL_MAX_UNIFORM_BLOCK_SIZE),
                   get_from_ogl(GLint, glGetIntegerv, GL_MAX_UNIFORM_BUFFER_BINDINGS),
                   get_from_ogl(GLint, glGetIntegerv, GL_MAX_VERTEX_UNIFORM_BLOCKS),

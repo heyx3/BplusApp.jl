@@ -650,7 +650,7 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
         clip_offset = -draw_pos_min
         # Clip scale is (1, 1) unless using retina display, which is often (2, 2).
         clip_scale = v2f(unsafe_load(draw_data.FramebufferScale.x),
-                        unsafe_load(draw_data.FramebufferScale.y))
+                         unsafe_load(draw_data.FramebufferScale.y))
 
         # We need alpha blending, no culling (the safer option, and no difference in performance),
         #    no depth-testing (depth is determined by draw order), and no depth writes.
@@ -688,7 +688,7 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
                     set_buffer_data(serv.buffer_vertices, vertices)
                 end
                 let indices = unsafe_wrap(Vector{CImGui.ImDrawIdx},
-                                         indices_native.Data, indices_native.Size)
+                                          indices_native.Data, indices_native.Size)
                     if serv.buffer_indices.byte_size < (length(indices) * sizeof(CImGui.ImDrawIdx))
                         close(serv.buffer_indices)
                         new_size = sizeof(CImGui.ImDrawIdx) * length(indices) * 2
@@ -722,7 +722,7 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
                                                     clip_rect_projected.z, clip_rect_projected.w)
                         clip_min = clip_scale * (clip_minmax_projected.xy + clip_offset)
                         clip_max = clip_scale * (clip_minmax_projected.zw + clip_offset)
-                        if all(clip_min < clip_max)
+                        if all(clip_min < framebuffer_size) && all(clip_max >= 0)
                             # The scissor min and max depend on the assumption
                             #    of lower-left-corner clip-mode.
                             scissor_min = Vec(clip_min.x, framebuffer_size.y - clip_max.y)
@@ -733,7 +733,6 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
                             # ImGUI is using 0-based pixels, but B+ uses 1-based.
                             scissor_min_pixel += one(Int32)
                             scissor_max_pixel += one(Int32)
-                            # Max pixel doesn't need to add 1, but I'm not quite sure why.
                             set_scissor(context, Box2Di(min=scissor_min_pixel, max=scissor_max_pixel))
 
                             # Draw the texture.
@@ -741,8 +740,10 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
                             tex = haskey(serv.user_textures_by_handle, tex_id) ?
                                     serv.user_textures_by_handle[tex_id] :
                                     error("Unknown GUI texture handle: ", tex_id)
+                            tex_view::View = (tex isa Texture) ? get_view(tex) : tex
+                            keep_activated::Bool = (tex_id == font_tex_id) || tex_view.is_active
                             set_uniform(serv.render_program, "u_texture", tex)
-                            (tex_id != font_tex_id) && view_activate(tex)
+                            !keep_activated && view_activate(tex_view)
                             render_mesh(
                                 serv.buffer, serv.render_program
                                 ;
@@ -754,9 +755,7 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
                                     size=n_elements
                                 ))
                             )
-                            if (tex_id != font_tex_id)
-                                view_deactivate(tex)
-                            end
+                            !keep_activated && view_deactivate(tex_view)
                         end
                     end
                 end
