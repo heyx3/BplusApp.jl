@@ -20,7 +20,7 @@ macro ogl_handle(name::Symbol, gl_type_name,
 
     type_name = esc(Symbol(:Ptr_, name))
     null_val = esc(null_val)
-    gl_type_name = esc(gl_type_name)
+    gl_type_name_e = esc(gl_type_name)
     hash_extra = hash(name)
     return quote
         Base.@__doc__(
@@ -29,12 +29,12 @@ macro ogl_handle(name::Symbol, gl_type_name,
         $type_name() = reinterpret($type_name, $gl_type($null_val))
         $type_name(i::$gl_type) = reinterpret($type_name, i)
         $type_name(i::Integer) = $type_name(convert($gl_type, i))
-        $gl_type_name(i::$type_name) = reinterpret($gl_type_name, i)
-        $(esc(:gl_type))(x::$type_name) = $gl_type_name(x)
-        $(esc(:gl_type))(::Type{$type_name}) = $gl_type_name
-        Base.show(io::IO, x::$type_name) = print(io, $display_name, '<', Int($gl_type_name(x)), '>')
-        Base.print(io::IO, x::$type_name) = print(io, Int($gl_type_name(x)))
-        Base.convert(::Type{$gl_type_name}, i::$type_name) = reinterpret($gl_type, i)
+        ModernGLbp.$gl_type_name(i::$type_name) = reinterpret($gl_type_name_e, i)
+        $(esc(:gl_type))(x::$type_name) = $gl_type_name_e(x)
+        $(esc(:gl_type))(::Type{$type_name}) = $gl_type_name_e
+        Base.show(io::IO, x::$type_name) = print(io, $display_name, '<', Int($gl_type_name_e(x)), '>')
+        Base.print(io::IO, x::$type_name) = print(io, Int($gl_type_name_e(x)))
+        Base.convert(::Type{$gl_type_name_e}, i::$type_name) = reinterpret($gl_type, i)
         Base.unsafe_convert(::Type{Ptr{$gl_type}}, r::Base.RefValue{$type_name}) =
             Base.unsafe_convert(Ptr{$gl_type}, Base.unsafe_convert(Ptr{Nothing}, r))
         Base.hash(h::$type_name, u::UInt) = hash(tuple(gl_type(h), $hash_extra), u)

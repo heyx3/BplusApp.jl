@@ -283,3 +283,8 @@ bp_gl_context( v2i(300, 300), "std140 test with compute shader";
         }
     """)
 end
+
+@bp_check(rand(C) isa C, typeof(rand(C)))
+for T in [ StaticBlockArray{3, Float32, OglBlock_std140}, StaticBlockArray{4, C} ]
+    @bp_check(rand(T) isa T, "Got ", typeof(rand(T)), " instead of ", T)
+end

@@ -2,7 +2,7 @@
 module GL
 
 # External dependencies
-using Setfield, TupleTools, MacroTools, StructTypes
+using Setfield, TupleTools, MacroTools, StructTypes, Random
 using ImageIO, FixedPointNumbers, ColorTypes, FileIO
 using GLFW, CSyntax
 

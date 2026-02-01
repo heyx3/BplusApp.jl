@@ -106,7 +106,6 @@ block_static_array_length(::Type{<:StaticBlockArray{N}}) where {N} = N
 block_simple_type(::Type{<:StaticBlockArray{N, T, TMode}}) where {N, T, TMode} = StaticBlockArray{N, T, TMode}
 
 
-
 export block_mode, block_simple_type, block_static_array_length,
        block_byte_size, block_padding_size, block_alignment,
        block_byte_array, block_property_type, block_property_types,
@@ -145,22 +144,119 @@ end
 function set_buffer_data(buffer::Buffer, data::BlockArray, buffer_first_byte::Integer=1)
     set_buffer_data(buffer, block_byte_array(data), buffer_first_byte)
 end
-"
-Gets a buffer's data as a kind of `BlockArray`,
-    for data mode `OglBlock_std140` or `OglBlock_std430`.
-"
+"Gets a buffer's data as a kind of `BlockArray`, for data mode `OglBlock_std140` or `OglBlock_std430`"
 function get_buffer_data(b::Buffer,
                          TOut::Type{StaticBlockArray{N, T, TMode}},
                          buffer_first_byte::Integer = 1
-                        )::T where {N, T, TMode}
+                        )::TOut where {N, T, TMode}
     arr::Vector{UInt8} = get_buffer_data(
         b,
-        (UInt8, block_array_element_stride(T) * N),
+        (UInt8, block_array_element_stride(T, TMode) * N),
         buffer_first_byte
     )
     return TOut{typeof(arr)}(arr)
 end
+function get_buffer_data(b::Buffer,
+                         TOut::Type{StaticBlockArray{N, T}},
+                         buffer_first_byte::Integer = 1
+                        )::TOut where {N, T<:AbstractOglBlock}
+    return get_buffer_data(b, StaticBlockArray{N, T, block_mode(T)}, buffer_first_byte)
+end
 
+const ByteVectorView = typeof(@view (UInt8[ 3, 4, 5, 6, 7 ])[2:3])
+
+"
+Reads a buffer's data as an array of bytes,
+  then creates an array of the given `@std140` or `@std430` struct type, using views over that byte array.
+"
+function get_buffer_data(b::Buffer,
+                         TVector::Type{Vector{TOut}},
+                         buffer_first_byte::Integer = 1
+                         ; fixed_element_count::Optional{Int} = nothing
+                        )::Vector{<:TOut{<:SubArray{UInt8}}} where {TOut<:AbstractOglBlock}
+    el_byte_size::Int = block_byte_size(TOut)
+    available_bytes = b.byte_size - convert(UInt64, buffer_first_byte) + 1
+    n_elements::Int = if exists(fixed_element_count)
+        @bp_check(available_bytes >= fixed_element_count * el_byte_size,
+                  "Trying to take ", fixed_element_count, " elements of ",
+                    el_byte_size, " bytes each from only ", available_bytes, " bytes of buffer!")
+        fixed_element_count
+    else
+        available_bytes ÷ el_byte_size
+    end
+    n_bytes::Int = n_elements * el_byte_size
+
+    bytes = Vector{UInt8}(undef, n_bytes)
+    get_buffer_data(b, bytes, buffer_first_byte)
+    
+    elements = Vector{TOut{ByteVectorView}}(undef, n_elements)
+    for i in 1:n_elements
+        elements[i] = TOut{ByteVectorView}(@view bytes[(((i-1) * el_byte_size) + 1) : (i * el_byte_size)])
+    end
+
+    return elements
+end
+
+function Random.rand!(rng::Random.AbstractRNG, b::AbstractOglBlock)
+    # Note: reduce() is supposedly a reliable way to unroll loops over tuples.
+    reduce((a,b)->a,
+        ( # Generator statement that invokes rand! on each property
+            begin
+                mode = if b isa OglBlock_std140
+                    OglBlock_std140
+                elseif b isa OglBlock_std430
+                    OglBlock_std430
+                else
+                    error("Unhandled: ", typeof(b))
+                end
+                if P <: AbstractOglBlock
+                    rand!(rng, getproperty(b, n))
+                elseif P <: StaticBlockArray
+                    setproperty!(b, n, rand(rng, P{mode}))
+                else
+                    setproperty!(b, n, rand(rng, P))
+                end
+                nothing
+            end for (n, P) in zip(propertynames(typeof(b)), block_property_types(typeof(b)))
+        ),
+        init=nothing
+    )
+end
+function Random.rand!(rng::Random.AbstractRNG, a::StaticBlockArray{N, T}) where {N, T}
+    for i in 1:N
+        if T <: AbstractOglBlock
+            rand!(rng, a[i])
+        else
+            a[i] = rand(rng, T)
+        end
+    end
+    return nothing
+end
+
+function Random.rand(rng::Random.AbstractRNG, ::Random.SamplerType{T}) where {T<:AbstractOglBlock}
+    t = T()
+    rand!(rng, t)
+    return t
+end
+function Random.rand(rng::Random.AbstractRNG,
+                     ::Random.SamplerType{StaticBlockArray{N, F, Mode}}
+                    )::StaticBlockArray{N, F, Mode, Vector{UInt8}} where {N, F, Mode}
+    output = StaticBlockArray{N, F, Mode}()
+    rand!(rng, output)
+    return output
+end
+function Random.rand(rng::Random.AbstractRNG,
+                     ::Random.SamplerType{StaticBlockArray{N, T}}
+                    )::StaticBlockArray{N, T, <:AbstractOglBlock, Vector{UInt8}} where {N, T<:AbstractOglBlock}
+    output = StaticBlockArray{N, T}()
+    rand!(rng, output)
+    return output
+end
+function Random.rand(rng::Random.AbstractRNG,
+                     sp::Random.SamplerType{StaticBlockArray{N, T}}
+                    ) where {N, T}
+    error("You specified `StaticBlockArray{", N, ", ", T, "}` without a third type param for the Mode (@std140/@std430)!")
+end
 
 glsl_type_decl(T::Type                        , name, struct_lookup::Dict{Type, String})              = "$(glsl_type_decl(T, struct_lookup)) $name"
 glsl_type_decl( ::Type{StaticBlockArray{N, T}}, name, struct_lookup::Dict{Type, String}) where {N, T} = "$(glsl_type_decl(T, struct_lookup)) $name[$N]"

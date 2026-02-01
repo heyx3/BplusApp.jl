@@ -148,7 +148,7 @@ function set_buffer_data(b::Buffer, data::Ref,
     @bp_check(min_inclusive(buffer_byte_range) > 0,
               "Buffer byte range starts behind the first byte! ", buffer_byte_range)
     @bp_check(max_inclusive(buffer_byte_range) <= b.byte_size,
-              "Buffer byte range ends before the last byte! ", buffer_byte_range)
+              "Buffer byte range ends before the last byte! ", buffer_byte_range, " out of ", b.byte_size)
     glNamedBufferSubData(
         b.handle,
         min_inclusive(buffer_byte_range) - 1,
@@ -254,13 +254,38 @@ function get_buffer_data(b::Buffer, ::Type{T},
         return r[]
     end
 end
+"Gets a buffer's data and returns it as the given array type"
+function get_buffer_data(b::Buffer, ::Type{Vector{T}},
+                         buffer_first_byte::Integer = 1
+                         ; fixed_element_count::Optional{Int} = nothing)::Vector{T} where {T}
+    @bp_check(isbitstype(T),   T, " isn't a bitstype")
+    @bp_check(b.byte_size >= buffer_first_byte,
+              "Byte offset into buffer runs past the end of the buffer! ",
+                buffer_first_byte, "/", b.byte_size)
+    available_bytes = b.byte_size - convert(UInt64, buffer_first_byte) + 1
+    
+    element_byte_size = sizeof(T)
+    element_count::Int = if exists(fixed_element_count)
+        @bp_check(available_bytes >= fixed_element_count * element_byte_size,
+                  "Trying to take ", fixed_element_count, " elements of ",
+                    element_byte_size, " bytes each from only ", available_bytes, " bytes of buffer!")
+        fixed_element_count
+    else
+        available_bytes ÷ element_byte_size
+    end
 
-"Gets a buffer's data and writes it into the given array of bitstypes"
+    output = Vector{T}(undef, element_count)
+    get_buffer_data(b, output, buffer_first_byte)
+    return output
+end
+
+"Gets a buffer's data and writes it into the given *contiguous* array of bitstypes"
 function get_buffer_data(b::Buffer, a::AbstractArray{T},
                          buffer_first_byte::Integer = 1
                         )::Nothing where {T}
     @bp_check(!isbitstype(a),  typeof(a), " doesn't appear to be a mutable array")
-        # Note that we can't use ismutable() because some immutable structs hold a reference to mutable data
+    # ^ Note that we can't use ismutable() because immutable structs can still hold a reference to mutable data.
+
     @bp_check(isbitstype(T),   T, " isn't a bitstype")
     if a isa SubArray
         @bp_check(Base.iscontiguous(a),

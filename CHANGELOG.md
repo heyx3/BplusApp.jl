@@ -1,8 +1,9 @@
 # v0.3.2
 
+* Add new overloads of `get_buffer_data()`
 * Add Dear ImGUI drawing helpers to GUI module
 * Add more device info to `GL.Device`
-* Fix bugs with Targets, BasicGraphics service, and GUI service
+* Fix bugs with Targets, Buffers, BasicGraphics service, and GUI service
 * Update CImGui version to fix bugs with it
 
 # v0.3.0
