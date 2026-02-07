@@ -41,7 +41,8 @@ See: https://pixtur.github.io/mkdocs-for-imgui/site/api-imgui/ImGui--Dear-ImGui-
 * <0.0f: align xx pixels to the right of window (so -1.0f always align width to the right side)
 * ==0.0f: default to ~⅔ of windows width
 "
-function gui_with_item_width(to_do, width::Real)
+function gui_with_item_width(to_do, width::Real; unchanged::Bool=false)
+    unchanged && return to_do()
     CImGui.PushItemWidth(convert(Float32, width))
     try
         return to_do()
@@ -51,7 +52,9 @@ function gui_with_item_width(to_do, width::Real)
 end
 
 
-function gui_with_indentation(to_do, width::Optional{Real} = nothing)
+function gui_with_indentation(to_do, width::Optional{Real} = nothing
+                              ; unchanged::Bool=false)
+    unchanged && return to_do()
     CImGui.Indent(@optional(exists(width), width))
     try
         return to_do()
@@ -67,7 +70,8 @@ Adds a tooltip to the previous widget/group,
 Returns `nothing` if the tooltip isn't open; otherwise returns `Some(x)`
   where `x` is the returned value from your lambda.
 "
-function gui_tooltip(to_do)::Optional{Some}
+function gui_tooltip(to_do; skip::Bool = false)::Optional{Some}
+    skip && return nothing
     if CImGui.IsItemHovered(CImGui.LibCImGui.ImGuiHoveredFlags_AllowWhenDisabled)
        CImGui.BeginTooltip()
         try
@@ -84,7 +88,9 @@ Adds a plaintext tooltip to the previous widget/group, optionally using text wra
   and returns whether the tooltip was open.
 "
 function gui_tooltip(label::String,
-                     wrap_size::Real = CImGui.GetFontSize() * 40)::Bool
+                     wrap_size::Real = CImGui.GetFontSize() * 40
+                     ; unchanged::Bool = false)::Bool
+    unchanged && return false
     return exists(gui_tooltip() do
         gui_with_text_wrap(wrap_size) do
             CImGui.TextUnformatted(label)
@@ -93,7 +99,9 @@ function gui_tooltip(label::String,
 end
 
 function gui_with_style(to_do, var::CImGui.LibCImGui.ImGuiStyleVar,
-                               value::Union{Real, Vec2, gVec2, Tuple{Any, Any}})
+                               value::Union{Real, Vec2, gVec2, Tuple{Any, Any}}
+                               ; unchanged::Bool = false)
+    unchanged && return to_do()
     CImGui.PushStyleVar(var,
         if value isa Real
             value
@@ -111,9 +119,11 @@ function gui_with_style(to_do, var::CImGui.LibCImGui.ImGuiStyleVar,
         CImGui.PopStyleVar()
     end
 end
-"Color can be provided as a U32 hex code, or 3/4 floats between 0 and 1"
+"Color can be provided as a U32 hex code, or 3-4 floats between 0 and 1"
 function gui_with_style(to_do, color_idx::CImGui.LibCImGui.ImGuiCol_,
-                               color::Union{UInt32, Vec3, Vec4, gVec4})
+                               color::Union{UInt32, Vec3, Vec4, gVec4}
+                               ; unchanged::Bool = false)
+    unchanged && return to_do()
     CImGui.PushStyleColor(color_idx,
         if color isa UInt32
             color
@@ -134,7 +144,8 @@ function gui_with_style(to_do, color_idx::CImGui.LibCImGui.ImGuiCol_,
     end
 end
 
-function gui_with_padding(to_do, padding...)
+function gui_with_padding(to_do, padding...; unchanged::Bool = false)
+    unchanged && return to_do()
     CImGui.PushStyleVar(CImGui.ImGuiStyleVar_WindowPadding, padding...)
     try
         return to_do()
@@ -149,7 +160,8 @@ Sets the text wrapping amount (i.e the horizontal postion where it wraps).
 NaN or negative values disable wrapping.
 Inf or 0 makes it wrap at the very end of the content area.
 "
-function gui_with_text_wrap(to_do, wrapping::Real=Inf)
+function gui_with_text_wrap(to_do, wrapping::Real=Inf; unchanged::Bool = false)
+    unchanged && return to_do()
     CImGui.PushTextWrapPos(
         if isnan(wrapping)
             -1.0f0
@@ -170,7 +182,8 @@ function gui_with_clip_rect(to_do,
                             rect::Box2Df, intersect_with_current_rect::Bool,
                             draw_list::Optional{Ptr{LibCImGui.ImDrawList}} = nothing
                             #TODO: Param for using world space (call different CImGui func)
-                            )
+                            ; unchanged::Bool = false)
+    unchanged && return to_do()
     CImGui.PushClipRect(@optional(exists(draw_list), draw_list),
                         gVec2(min_inclusive(rect)...),
                         gVec2(max_exclusive(rect)...),
@@ -201,7 +214,8 @@ function gui_add_font_from_memory_ttf(bytes::AbstractVector{UInt8},
     return fonts
 end
 
-function gui_with_font(to_do, font::Ptr)
+function gui_with_font(to_do, font::Ptr; unchanged::Bool = false)
+    unchanged && return to_do()
     CImGui.PushFont(font)
     try
         return to_do()
@@ -209,18 +223,20 @@ function gui_with_font(to_do, font::Ptr)
         CImGui.PopFont()
     end
 end
-function gui_with_font(to_do, font_idx::Integer)
+function gui_with_font(to_do, font_idx::Integer; unchanged::Bool = false)
+    unchanged && return to_do()
     font_singleton = unsafe_load(CImGui.GetIO().Fonts)
     font_list::CImGui.ImVector_ImFontPtr = unsafe_load(font_singleton.Fonts)
     font::Ptr{CImGui.ImFont} = unsafe_load(font_list.Data, font_idx)
-    return gui_with_font(to_do, font)
+    return gui_with_font(to_do, font, unchanged=false)
 end
 
 "
 Executes some GUI code without allowing the user to tab to different widgets
   (so tabs get inserted into text editors).
 "
-function gui_with_unescaped_tabbing(to_do)
+function gui_with_unescaped_tabbing(to_do; unchanged::Bool = false)
+    unchanged && return to_do()
     CImGui.PushAllowKeyboardFocus(false)
     try
         return to_do()
@@ -233,17 +249,22 @@ end
 Executes some GUI code with the given ID data (ptr, String, Integer, or begin + end Strings)
   pushed onto the stack.
 "
-function gui_with_nested_id(to_do, values...)
+function gui_with_nested_id(to_do, values...; unchanged::Bool = false)
+    unchanged && return to_do()
     CImGui.PushID(values...)
-    to_do()
-    CImGui.PopID()
+    try
+        return to_do()
+    finally
+        CImGui.PopID()
+    end
 end
 
 "
 Executes some GUI within a fold (what Dear ImGUI calls a 'tree node').
 If it's open, returns the output of your lambda; otherwise returns `nothing`.
 "
-function gui_within_fold(to_do, label)
+function gui_within_fold(to_do, label; unchanged::Bool = false)
+    unchanged && return to_do()
     is_visible::Bool = CImGui.TreeNode(label)
     if is_visible
         try
@@ -260,7 +281,8 @@ end
 Groups widgets together for placement within larger layouts
     (such as a vertical group within a horizontal line).
 "
-function gui_within_group(to_do)
+function gui_within_group(to_do; unchanged::Bool = false)
+    unchanged && return to_do()
     CImGui.BeginGroup()
     try
         return to_do()
@@ -282,7 +304,9 @@ gui_tab_views("Tab2") do
 end
 ````
 """
-function gui_tab_views(to_do, label, flags = CImGui.LibCImGui.ImGuiTabBarFlags_None)
+function gui_tab_views(to_do, label, flags = CImGui.LibCImGui.ImGuiTabBarFlags_None
+                       ; unchanged::Bool = false)
+    unchanged && return to_do()
     if CImGui.BeginTabBar(label, flags)
         try
             return to_do()
@@ -294,7 +318,12 @@ function gui_tab_views(to_do, label, flags = CImGui.LibCImGui.ImGuiTabBarFlags_N
     end
 end
 "Defines one tab, as part of a tab bar (see `gui_tab_views()`). Returns whether the tab view was open."
-function gui_tab_item(to_do, label, flags = CImGui.LibCImGui.ImGuiTabItemFlags_None)
+function gui_tab_item(to_do, label, flags = CImGui.LibCImGui.ImGuiTabItemFlags_None
+                      ; unchanged::Bool = false)
+    if unchanged
+        to_do()
+        return true
+    end
     if CImGui.BeginTabItem(label, C_NULL, flags)
         try
             to_do()
@@ -311,7 +340,9 @@ end
 Groups a GUI together into a smaller window.
 Returns the output of 'to_do()', or `nothing` if the window is closed.
 "
-function gui_within_child_window(to_do, id, size, flags=0)::Optional
+function gui_within_child_window(to_do, id, size, flags=0; unchanged::Bool = false)::Optional
+    unchanged && return to_do()
+
     if id isa String
         return gui_within_child_window(to_do, CImGui.GetID(id), size, flags)
     end

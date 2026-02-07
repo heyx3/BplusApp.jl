@@ -3,6 +3,7 @@
 * Add `make_vertex_shader_blit()` to go with the `BasicGraphicsService`
 * Add new overloads of `get_buffer_data()`
 * Add Dear ImGUI drawing helpers to GUI module
+* Add `unchanged` flag to scoped GUI helpers
 * Add `gui_add_font_from_memory_ttf()` to GUI module
 * Add more device info to `GL.Device`
 * Fix bugs with Targets, Buffers, BasicGraphics service, and GUI service
