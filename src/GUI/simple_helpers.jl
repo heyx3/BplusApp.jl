@@ -182,6 +182,25 @@ function gui_with_clip_rect(to_do,
     end
 end
 
+function gui_add_font_from_memory_ttf(bytes::AbstractVector{UInt8},
+                                      sizes_pixels::AbstractVector{<:Real},
+                                      oversampling::v2i = v2i(1, 1)
+                                     )::AbstractVector{Ptr{CImGui.LibCImGui.ImFont}}
+    config = CImGui.ImFontConfig_ImFontConfig()
+    unsafe_store!(config.OversampleH, Cint(oversampling.x))
+    unsafe_store!(config.OversampleV, Cint(oversampling.y))
+
+    unsafe_store!(config.FontDataOwnedByAtlas, false)
+    fonts = CImGui.AddFontFromMemoryTTF.(
+        Ref(unsafe_load(CImGui.GetIO().Fonts)),
+        Ref(bytes), length(bytes),
+        sizes_pixels, Ref(config)
+    )
+
+    CImGui.ImFontConfig_destroy(config)
+    return fonts
+end
+
 function gui_with_font(to_do, font::Ptr)
     CImGui.PushFont(font)
     try
@@ -311,7 +330,8 @@ end
 
 export gui_with_item_width, gui_with_indentation, gui_with_clip_rect, gui_with_padding, gui_with_text_wrap,
        gui_with_unescaped_tabbing, gui_with_style, gui_with_font, gui_with_nested_id, gui_tooltip,
-       gui_window, gui_within_fold, gui_within_group, gui_tab_views, gui_tab_item, gui_within_child_window
+       gui_window, gui_within_fold, gui_within_group, gui_tab_views, gui_tab_item, gui_within_child_window,
+       gui_add_font_from_memory_ttf
 #aa
 
 

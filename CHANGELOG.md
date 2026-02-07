@@ -1,7 +1,9 @@
 # v0.3.2
 
+* Add `make_vertex_shader_blit()` to go with the `BasicGraphicsService`
 * Add new overloads of `get_buffer_data()`
 * Add Dear ImGUI drawing helpers to GUI module
+* Add `gui_add_font_from_memory_ttf()` to GUI module
 * Add more device info to `GL.Device`
 * Fix bugs with Targets, Buffers, BasicGraphics service, and GUI service
 * Update CImGui version to fix bugs with it

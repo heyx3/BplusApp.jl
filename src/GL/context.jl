@@ -302,7 +302,7 @@ mutable struct Context
         return con
     end
 end
-export Context
+export RenderState, Device, Context
 
 @inline function Base.setproperty!(c::Context, name::Symbol, new_val)
     if hasfield(RenderState, name)

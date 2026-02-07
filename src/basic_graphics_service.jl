@@ -1,4 +1,26 @@
 "
+Generates the source code for a vertex shader that uses
+  the graphics service's `screen_triangle` and `screen_quad`.
+
+You can add your own transformation to the vertex position by passing code
+  which manipulates the screen coordinate `pos4`.
+Afterwards the `vec2 uv` is generated from `pos4`, and you can modify it by passing more code.
+"
+make_vertex_shader_blit(modify_pos4 = "", modify_uv = "") = """
+    in vec2 vIn_corner;
+    out vec2 vOut_uv;
+    void main() {
+        vec4 pos4 = vec4(vIn_corner, 0.5, 1);
+        $modify_pos4;
+        gl_Position = pos4;
+
+        vec2 uv = 0.5 + (0.5 * pos4.xy);
+        $modify_uv;
+        vOut_uv = uv;
+    }
+"""
+
+"
 A Context service which defines a bunch of useful GL resources:
 
  * `screen_triangle` : A 1-triangle mesh with 2D positions in NDC-space.
@@ -45,7 +67,7 @@ A Context service which defines a bunch of useful GL resources:
                            [ VertexDataSource(quad_poses, sizeof(Vec{2, Int8})) ],
                            [ VertexAttribute(1, 0x0, VSInput_FVector(Vec2{Int8}, false)) ])
 
-        blit = bp_glsl"""
+        blit = GL.bp_glsl_str("""
             uniform mat3 u_mesh_transform = mat3(1, 0, 0,
                                                  0, 1, 0,
                                                  0, 0, 1);
@@ -57,14 +79,7 @@ A Context service which defines a bunch of useful GL resources:
             uniform float u_curve = 1.0;
 
             #START_VERTEX
-            in vec2 vIn_corner;
-            out vec2 vOut_uv;
-            void main() {
-                vec3 pos3 = u_mesh_transform * vec3(vIn_corner, 1.0);
-                gl_Position = vec4(pos3.xy / pos3.z, 0.5, 1.0);
-
-                vOut_uv = 0.5 + (0.5 * vIn_corner);
-            }
+            $(make_vertex_shader_blit("pos4.xyz = u_mesh_transform * vec3(pos4.xy, 1.0);    pos4.xy /= pos4.z;   pos4.z = 0.5"))
 
             #START_FRAGMENT
             in vec2 vOut_uv;
@@ -73,7 +88,7 @@ A Context service which defines a bunch of useful GL resources:
                 vOut_color = pow(u_color_map * texture(u_tex, vOut_uv),
                                  vec4(u_curve, u_curve, u_curve, u_curve));
             }
-            """
+        """)
 
         empty_mesh = GL.Mesh(GL.PrimitiveTypes.point,
                              GL.VertexDataSource[ ],
@@ -144,4 +159,4 @@ end
 
 export Service_BasicGraphics, service_BasicGraphics,
        service_BasicGraphics_init, service_BasicGraphics_shutdown,
-       simple_blit
+       simple_blit, make_vertex_shader_blit

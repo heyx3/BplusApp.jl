@@ -119,7 +119,7 @@ end
 Creates a Target which uses already-existing texture[s].
 The Target is *not* responsible for cleaning them up.
 "
-function Target(color::Union{TargetOutput, Vector{TargetOutput}}, depth::TargetOutput)
+function Target(color::Union{TargetOutput, Vector{TargetOutput}}, depth::Union{Nothing, E_DepthStencilFormats, TargetOutput})
     local min_color_size::v2u,
           color_layer_count::Int,
           color_array::Vector{TargetOutput}
@@ -136,9 +136,23 @@ function Target(color::Union{TargetOutput, Vector{TargetOutput}}, depth::TargetO
     end
 
     return make_target(
-        min(min_color_size, output_size(depth)),
-        min(color_layer_count, output_layer_count(depth)),
-        color_array, depth, Texture[ ]
+        if isa(depth, TargetOutput)
+            min(min_color_size, output_size(depth))
+        else
+            min_color_size
+        end,
+        if isa(depth, TargetOutput)
+            min(color_layer_count, output_layer_count(depth))
+        else
+            color_layer_count
+        end,
+        color_array,
+        if depth isa E_DepthStencilFormats
+            TargetBuffer(min_color_size, depth)
+        else
+            depth
+        end,
+        Texture[ ]
     )
 end
 "
