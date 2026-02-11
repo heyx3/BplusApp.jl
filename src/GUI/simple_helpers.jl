@@ -98,7 +98,7 @@ function gui_tooltip(label::String,
     end)
 end
 
-function gui_with_style(to_do, var::CImGui.LibCImGui.ImGuiStyleVar,
+function gui_with_style(to_do, var::CImGui.LibCImGui.ImGuiStyleVar_,
                                value::Union{Real, Vec2, gVec2, Tuple{Any, Any}}
                                ; unchanged::Bool = false)
     unchanged && return to_do()
