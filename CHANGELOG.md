@@ -9,7 +9,7 @@
 * Fix bugs with Targets, Buffers, BasicGraphics service, and GUI service
 * Update CImGui version to fix bugs with it
 
-# v0.3.0
+# v0.3.0 - v0.3.1
 
 \[none, just syncing with BplusCore's updates]
 
