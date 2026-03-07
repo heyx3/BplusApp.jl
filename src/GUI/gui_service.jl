@@ -229,6 +229,16 @@ function c_set!(x::Ptr{NTuple{N,T}}, i, v) where {N,T}
     unsafe_store!(Ptr{T}(x), T(v), Integer(i)+1)
 end
 
+"Internal helper macro for the GUI service to log frame-drawing data"
+macro gui_frame_logln(args...)
+    serv = esc(:serv)
+    return :(
+        if $serv.debug_log_render_commands
+            println(stderr, $(esc.(args)...), '\n')
+        end
+    )
+end
+
 
 ###################
 ##   Interface   ##
@@ -274,6 +284,9 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
     callback_closures_key::Base.Callable
     callback_closures_mouse_button::Base.Callable
     callback_closures_scroll::Base.Callable
+
+    # Flag to print all rendering commands to stderr at the end of the next frame.
+    debug_log_render_commands::Bool
 
 
     function INIT(; initial_vertex_capacity::Int = 1024,
@@ -383,7 +396,9 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
             (_...) -> nothing,
             (_...) -> nothing,
             (_...) -> nothing,
-            (_...) -> nothing
+            (_...) -> nothing,
+
+            false
         )
 
         # Tell ImGui how to manipulate/query data.
@@ -607,20 +622,26 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
         io::Ptr{CImGui.ImGuiIO} = CImGui.GetIO()
         @bp_check(CImGui.ImFontAtlas_IsBuilt(unsafe_load(io.Fonts)),
                   "Font atlas isn't built! Make sure you've called `service_GUI_rebuild_fonts()`")
+        @gui_frame_logln("---------------------------------------")
 
         # Notify Dear ImGUI that drawing is starting.
         CImGui.Render()
         draw_data::Ptr{CImGui.ImDrawData} = CImGui.GetDrawData()
         if draw_data == C_NULL
+            @gui_frame_logln("CImGui.GetDrawData() is null! No drawing can be done\n\n")
             return nothing
         end
 
         # Compute coordinate transforms.
-        framebuffer_size = v2i(trunc(unsafe_load(draw_data.DisplaySize.x) *
-                                     unsafe_load(draw_data.FramebufferScale.x)),
-                               trunc(unsafe_load(draw_data.DisplaySize.y) *
-                                     unsafe_load(draw_data.FramebufferScale.y)))
+        display_size = v2f(unsafe_load.((draw_data.DisplaySize.x, draw_data.DisplaySize.y))...)
+        framebuffer_scale = v2f(unsafe_load.((draw_data.FramebufferScale.x, draw_data.FramebufferScale.y))...)
+        framebuffer_size = trunc(v2i, display_size * framebuffer_scale)
+        @gui_frame_logln("CImGui.GetDrawData(). ...",
+                         "\n\tDisplaySize: ", display_size,
+                         "\n\tFramebufferScale: ", framebuffer_scale,
+                         "\n\tfloor(DS * FS) = FramebufferSize: ", framebuffer_size)
         if any(framebuffer_size <= 0)
+            @gui_frame_logln("FB size is invalid! No drawing can be done\n\n")
             return nothing
         end
         draw_pos_min = v2f(unsafe_load(draw_data.DisplayPos.x),
@@ -634,6 +655,10 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
             max=v3f(draw_pos_max.x, draw_pos_min.y, 1)
         ))
         set_uniform(serv.render_program, "u_transform", mat_proj)
+        @gui_frame_logln("\tDisplayPos: ", draw_pos_min,
+                       "\n\tDisplaySize: ", draw_size,
+                       "\n\t(DP + DS) = DisplayMax: ", draw_pos_max,
+                       "\n\tOrthoProjection: ", mat_proj)
 
         # Pre-activate the font texture, which will be used in many GUI calls.
         font_tex_id = unsafe_load(unsafe_load(io.Fonts).TexID)
@@ -642,6 +667,7 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
                       "Font texture ID is not ", font_tex_id, " as reported. ",
                          "Full ImGUI texture map: ", serv.user_textures_by_handle)
         @bp_gui_assert(font_tex_id == TEX_ID_FONT)
+        @gui_frame_logln("CImGui.GetIO().Fonts.TexID: ", font_tex_id)
         view_activate(serv.font_texture)
 
         # Scissor/clip rectangles will come in projection space.
@@ -651,6 +677,9 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
         # Clip scale is (1, 1) unless using retina display, which is often (2, 2).
         clip_scale = v2f(unsafe_load(draw_data.FramebufferScale.x),
                          unsafe_load(draw_data.FramebufferScale.y))
+        @gui_frame_logln("Scissor/clip rectangle transform:",
+                         "\n\t1. Offset=", clip_offset,
+                         "\n\t2. Scale=", clip_scale)
 
         # We need alpha blending, no culling (the safer option, and no difference in performance),
         #    no depth-testing (depth is determined by draw order), and no depth writes.
@@ -663,14 +692,20 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
         @set! gui_render_state.depth_write = false
         @set! gui_render_state.blend_mode = (
             rgb = make_blend_alpha(BlendStateRGB),
-            alpha = make_blend_alpha(BlendStateAlpha)
+            # This is an odd blend mode for alpha, but it's what the original backend does...
+            alpha = BlendStateAlpha(
+                BlendFactors.one, BlendFactors.inverse_src_alpha,
+                BlendOps.add
+            )
         )
         @set! gui_render_state.cull_mode = FaceCullModes.off
         @set! gui_render_state.scissor = nothing
+        @gui_frame_logln("Render state: ", gui_render_state)
         with_render_state(context, gui_render_state) do
             cmd_lists::Vector{Ptr{CImGui.ImDrawList}} = unsafe_wrap(Vector{Ptr{CImGui.ImDrawList}},
                                                                     unsafe_load(draw_data.CmdLists),
                                                                     unsafe_load(draw_data.CmdListsCount))
+            @gui_frame_logln("Command lists: [")
             for cmd_list_ptr in cmd_lists
                 # Upload the vertex/index data.
                 # We may have to reallocate the buffers if they're not large enough.
@@ -679,22 +714,42 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
                 reallocated_buffers::Bool = false
                 let vertices = unsafe_wrap(Vector{CImGui.ImDrawVert},
                                            vertices_native.Data, vertices_native.Size)
+                    @gui_frame_logln("\t", length(vertices), " Verts")
                     if serv.buffer_vertices.byte_size < (length(vertices) * sizeof(CImGui.ImDrawVert))
                         close(serv.buffer_vertices)
                         new_size = sizeof(CImGui.ImDrawVert) * length(vertices) * 2
+                        @gui_frame_logln("\t\tResized buffer to capacity ", new_size)
                         serv.buffer_vertices = Buffer(new_size, true, KEEP_MESH_DATA_ON_CPU)
                         reallocated_buffers = true
                     end
+
+                    @gui_frame_logln("\t\t[")
+                    @gui_frame_logln("\t\t\t", iter_join((
+                        string(
+                            "P={", v.pos.x, ", ", v.pos.y,
+                            "}  Uv={", v.uv.x, ", ", v.uv.y,
+                            "}  Col=", v.col
+                        ) for v in vertices
+                    ), "\n\t\t\t")...)
+                    @gui_frame_logln("\t\t]")
+
                     set_buffer_data(serv.buffer_vertices, vertices)
                 end
                 let indices = unsafe_wrap(Vector{CImGui.ImDrawIdx},
                                           indices_native.Data, indices_native.Size)
+                    @gui_frame_logln("\t", length(indices), " Indices")
                     if serv.buffer_indices.byte_size < (length(indices) * sizeof(CImGui.ImDrawIdx))
                         close(serv.buffer_indices)
                         new_size = sizeof(CImGui.ImDrawIdx) * length(indices) * 2
+                        @gui_frame_logln("\t\tResized buffer to capacity ", new_size)
                         serv.buffer_indices = Buffer(new_size, true, KEEP_MESH_DATA_ON_CPU)
                         reallocated_buffers = true
                     end
+
+                    @gui_frame_logln("\t\t[")
+                    @gui_frame_logln("\t\t\t", iter_join(indices, "    ")...)
+                    @gui_frame_logln("\t\t]")
+
                     set_buffer_data(serv.buffer_indices, indices)
                 end
                 if reallocated_buffers
@@ -704,13 +759,16 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
 
                 # Execute the individual commands.
                 cmd_buffer = unsafe_load(cmd_list_ptr.CmdBuffer)
+                @gui_frame_logln("\t", cmd_buffer.Size, " commands: [")
                 for cmd_i in 1:cmd_buffer.Size
                     cmd_ptr::Ptr{CImGui.ImDrawCmd} = cmd_buffer.Data +
                                                        ((cmd_i - 1) * sizeof(CImGui.ImDrawCmd))
                     n_elements = unsafe_load(cmd_ptr.ElemCount)
+                    @gui_frame_logln("\t\tCommand ", cmd_i, ", with ", n_elements, " indexed elements")
 
                     # If the user provided a custom drawing function, use that.
                     if unsafe_load(cmd_ptr.UserCallback) != C_NULL
+                        @gui_frame_logln("\t\t\tCommand is a user callback, ", cmd_ptr.UserCallback)
                         ccall(unsafe_load(cmd_ptr.UserCallback), Cvoid,
                               (Ptr{CImGui.ImDrawList}, Ptr{CImGui.ImDrawCmd}),
                               cmd_list_ptr, cmd_ptr)
@@ -722,7 +780,9 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
                                                     clip_rect_projected.z, clip_rect_projected.w)
                         clip_min = clip_scale * (clip_minmax_projected.xy + clip_offset)
                         clip_max = clip_scale * (clip_minmax_projected.zw + clip_offset)
-                        if all(clip_min < framebuffer_size) && all(clip_max >= 0)
+                        @gui_frame_logln("\t\t\tClip area: ", clip_minmax_projected,
+                                       "\n\t\t\tTransformed Clip Area: ", clip_min, " => ", clip_max)
+                        if all(clip_max > clip_min)
                             # The scissor min and max depend on the assumption
                             #    of lower-left-corner clip-mode.
                             scissor_min = Vec(clip_min.x, framebuffer_size.y - clip_max.y)
@@ -734,9 +794,11 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
                             scissor_min_pixel += one(Int32)
                             scissor_max_pixel += one(Int32)
                             set_scissor(context, Box2Di(min=scissor_min_pixel, max=scissor_max_pixel))
+                            @gui_frame_logln("\t\t\tset_scissor(min=", scissor_min_pixel, ", max=", scissor_max_pixel, ")")
 
                             # Draw the texture.
                             tex_id = unsafe_load(cmd_ptr.TextureId)
+                            @gui_frame_logln("\t\t\tTex ID: ", tex_id)
                             tex = haskey(serv.user_textures_by_handle, tex_id) ?
                                     serv.user_textures_by_handle[tex_id] :
                                     error("Unknown GUI texture handle: ", tex_id)
@@ -744,6 +806,7 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
                             keep_activated::Bool = (tex_id == font_tex_id) || tex_view.is_active
                             set_uniform(serv.render_program, "u_texture", tex)
                             !keep_activated && view_activate(tex_view)
+                            first_idx_zero_based = unsafe_load(cmd_ptr.IdxOffset)
                             render_mesh(
                                 serv.buffer, serv.render_program
                                 ;
@@ -751,19 +814,26 @@ To use a `GL.Texture` or `GL.View` in CImGui, wrap it with `gui_tex_handle()`.
                                     value_offset = UInt64(unsafe_load(cmd_ptr.VtxOffset))
                                 ),
                                 elements = IntervalU((
-                                    min=unsafe_load(cmd_ptr.IdxOffset) + 1,
+                                    min=first_idx_zero_based + 1,
                                     size=n_elements
                                 ))
                             )
+                            @gui_frame_logln("\t\t\tFirst index used (1-based): ", first_idx_zero_based+1,
+                                           "\n\t\t\tDrawn!")
                             !keep_activated && view_deactivate(tex_view)
+                        else
+                            @gui_frame_logln("\t\t\tClip area is invalid; command skipped!")
                         end
                     end
                 end
+                @gui_frame_logln("\t]")
             end
+            @gui_frame_logln("]")
 
             view_deactivate(serv.font_texture)
         end
 
+        serv.debug_log_render_commands = false
         return nothing
     end
 

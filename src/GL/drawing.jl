@@ -58,7 +58,7 @@ end
 
 
 "
-Renders a mesh using the currently-active shader program.
+Renders a mesh using the given shader program.
 
 IMPORTANT NOTE: All counting/indices follow Julia's 1-based convention.
 Under the hood, they will get converted to 0-based for OpenGL.

@@ -1,3 +1,8 @@
+# v0.3.3
+
+* Add debug-logging instrumentation to the GUI service:
+just set `service_GUI().debug_log_render_commands = true`
+
 # v0.3.2
 
 * Add `make_vertex_shader_blit()` to go with the `BasicGraphicsService`

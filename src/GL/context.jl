@@ -381,8 +381,10 @@ extension_supported(name::String, context::Context = get_context()) = any(e.name
 export extension_supported
 
 "
-You can call this after some external tool messes with OpenGL state,
-   to force the Context to read the new state and update itself.
+You can call this after some external tool messes with OpenGL state.
+It forces the Context to read new state from OpenGL,
+  and set a few OpenGL state variables that are bedrock assumptions of this rendering module.
+
 However, keep in mind this function is pretty slow!
 "
 function refresh(context::Context)
