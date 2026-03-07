@@ -2,6 +2,7 @@
 
 * Add debug-logging instrumentation to the GUI service:
 just set `service_GUI().debug_log_render_commands = true`
+* Fix weird design choices with `gui_spherical_vector()`
 
 # v0.3.2
 

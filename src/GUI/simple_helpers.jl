@@ -385,26 +385,26 @@ function gui_spherical_vector( label, vec::v3f
         fallback_yaw[] = yawpitch[1]
     end
 
-    if stays_normalized
-        # Remove floating-point error in the previous length calculation.
-        radius = one(Float32)
-    else
-        # Provide an editor for the radius.
-        @c CImGui.InputFloat("$label Length", &radius)
-        CImGui.SameLine()
-    end
+    yawpitch = gui_with_nested_id(label) do
+        # Edit or normalize the radius.
+        if stays_normalized
+            radius = one(Float32)
+        else
+            @c CImGui.InputFloat("Length", &radius)
+            CImGui.SameLine(0, 5)
+        end
 
-    # Show two sliders, but with different ranges so we can't use CImGui.SliderFloat2().
-    yaw, pitch = yawpitch
-    content_width = CImGui.GetContentRegionAvailWidth()
-    CImGui.SetNextItemWidth(content_width * 0.4)
-    @c CImGui.SliderFloat("##Yaw", &yaw, -π, π)
-    CImGui.SameLine()
-    CImGui.SetNextItemWidth(content_width * 0.4)
-    gui_with_nested_id("Slider 2") do
-        @c CImGui.SliderFloat(label, &pitch, 0, π - 0.00001)
+        # Show two sliders, but with different ranges so we can't use CImGui.SliderFloat2().
+        yaw, pitch = yawpitch
+        @c CImGui.SliderFloat("##Yaw", &yaw, -π, π)
+        CImGui.SameLine(0, 5)
+        @c CImGui.SliderFloat("##Pitch", &pitch, 0, π - 0.00001)
+
+        CImGui.SameLine(0, 7)
+        CImGui.LabelText(label, "")
+
+        return (yaw, pitch)
     end
-    yawpitch = (yaw, pitch)
 
     # Convert back to cartesian coordinates.
     pitch_sincos = sincos(yawpitch[2])
