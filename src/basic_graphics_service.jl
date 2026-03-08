@@ -123,6 +123,25 @@ A Context service which defines a bunch of useful GL resources:
                          disable_depth_test::Bool = true,
                          manage_tex_view::Bool = true
                         )
+        set_uniform(service.blit, "u_mesh_transform", quad_transform)
+        set_uniform(service.blit, "u_color_map", color_transform)
+        set_uniform(service.blit, "u_curve", output_curve)
+        simple_blit(tex, service.blit,
+                    assume_full_screen = (quad_transform == m_identityf(3, 3)),
+                    disable_depth_test = disable_depth_test,
+                    manage_tex_view = manage_tex_view)
+    end
+    "Similar to `simple_blit` but uses your own custom blit shader (see `make_vertex_shader_blit()`)"
+    function custom_blit(service,
+                         tex::Union{Texture, View},
+                         blit_shader::Program
+                         ;
+                         # Optimization hint that we can use the screen triangle instead of a quad
+                         assume_full_screen::Bool = false,
+                         tex_name::String = "u_tex",
+                         disable_depth_test::Bool = true,
+                         manage_tex_view::Bool = true
+                        )
         context = get_context()
 
         tex_view = (tex isa View) ? tex : get_view(tex)
@@ -132,31 +151,24 @@ A Context service which defines a bunch of useful GL resources:
             view_activate(tex_view)
         end
 
-        set_uniform(service.blit, "u_tex", tex_view)
-        set_uniform(service.blit, "u_mesh_transform", quad_transform)
-        set_uniform(service.blit, "u_color_map", color_transform)
-        set_uniform(service.blit, "u_curve", output_curve)
-
         old_depth_test = context.state.depth_test
         if disable_depth_test
             set_depth_test(context, ValueTests.pass)
         end
 
-        # If drawing full-screen, use the more efficient triangle.
-        # If transforming it, use the more precise, intuitive screen_quad.
-        render_mesh((quad_transform == m_identityf(3, 3)) ?
-                        service.screen_triangle :
-                        service.screen_quad,
-                    service.blit)
+        set_uniform(blit_shader, tex_name, tex_view)
+        render_mesh(assume_full_screen ?
+                      service.screen_triangle :
+                      service.screen_quad,
+                    blit_shader)
 
+        set_depth_test(context, old_depth_test)
         if wrap_tex_activation
             view_deactivate(tex_view)
         end
-
-        set_depth_test(context, old_depth_test)
     end
 end
 
 export Service_BasicGraphics, service_BasicGraphics,
        service_BasicGraphics_init, service_BasicGraphics_shutdown,
-       simple_blit, make_vertex_shader_blit
+       simple_blit, custom_blit, make_vertex_shader_blit
