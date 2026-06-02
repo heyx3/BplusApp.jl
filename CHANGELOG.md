@@ -1,3 +1,7 @@
+# v0.3.4
+
+* Tiny fixes that caused runtime problems
+
 # v0.3.3
 
 * Add debug-logging instrumentation to the GUI service:

@@ -126,7 +126,7 @@ A Context service which defines a bunch of useful GL resources:
         set_uniform(service.blit, "u_mesh_transform", quad_transform)
         set_uniform(service.blit, "u_color_map", color_transform)
         set_uniform(service.blit, "u_curve", output_curve)
-        simple_blit(tex, service.blit,
+        custom_blit(tex, service.blit,
                     assume_full_screen = (quad_transform == m_identityf(3, 3)),
                     disable_depth_test = disable_depth_test,
                     manage_tex_view = manage_tex_view)

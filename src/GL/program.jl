@@ -167,6 +167,8 @@ function compile_stage( name::String,
         return handle
     else
         err_msg_len = get_from_ogl(GLint, glGetShaderiv, handle, GL_INFO_LOG_LENGTH)
+        err_msg_len -= 1 # Remove the null terminator from the string
+        err_msg_len -= 1 # Why is this also needed???
         err_msg_data = Vector{UInt8}(undef, err_msg_len)
         glGetShaderInfoLog(handle, err_msg_len, Ref(GLsizei(err_msg_len)), Ref(err_msg_data, 1))
 
@@ -285,6 +287,7 @@ function compile_program( p::ProgramCompiler,
     # Check for link errors.
     if get_from_ogl(GLint, glGetProgramiv, out_ptr, GL_LINK_STATUS) == GL_FALSE
         msg_len = get_from_ogl(GLint, glGetProgramiv, out_ptr, GL_INFO_LOG_LENGTH)
+        msg_len -= 1 # Remove the null terminator from the string
         msg_data = Vector{UInt8}(undef, msg_len)
         glGetProgramInfoLog(out_ptr, msg_len, Ref(Int32(msg_len)), Ref(msg_data, 1))
 
