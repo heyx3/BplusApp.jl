@@ -167,13 +167,28 @@ function compile_stage( name::String,
         return handle
     else
         err_msg_len = get_from_ogl(GLint, glGetShaderiv, handle, GL_INFO_LOG_LENGTH)
-        err_msg_len -= 1 # Remove the null terminator from the string
-        err_msg_len -= 1 # Why is this also needed???
+        if err_msg_len < 2
+            return string("Error compiling ", name,
+                           ": INTERNAL ERROR no message available from OpenGL!")
+        end
         err_msg_data = Vector{UInt8}(undef, err_msg_len)
-        glGetShaderInfoLog(handle, err_msg_len, Ref(GLsizei(err_msg_len)), Ref(err_msg_data, 1))
-
-        return string("Error compiling ", name, ": ",
-                      String(view(err_msg_data, 1:err_msg_len)))
+        actual_msg_size = let size_ptr = Ref(convert(GLsizei, err_msg_len))
+            glGetShaderInfoLog(handle, err_msg_len, size_ptr, Ref(err_msg_data, 1))
+            size_ptr[]
+        end
+        err_msg = String(view(err_msg_data, 1:actual_msg_size))
+        return string(
+            "Error compiling ", name, ": ",
+            if actual_msg_size != err_msg_len-1
+                tuple(
+                    "(INTERNAL ERROR expected msg to be $err_msg_len chars including null-terminator, ",
+                    "but OpenGL wrote $(actual_msg_size+1) instead)\n    "
+                )
+            else
+                tuple()
+            end...,
+            err_msg
+        )
     end
 end
 
@@ -286,13 +301,33 @@ function compile_program( p::ProgramCompiler,
 
     # Check for link errors.
     if get_from_ogl(GLint, glGetProgramiv, out_ptr, GL_LINK_STATUS) == GL_FALSE
-        msg_len = get_from_ogl(GLint, glGetProgramiv, out_ptr, GL_INFO_LOG_LENGTH)
-        msg_len -= 1 # Remove the null terminator from the string
-        msg_data = Vector{UInt8}(undef, msg_len)
-        glGetProgramInfoLog(out_ptr, msg_len, Ref(Int32(msg_len)), Ref(msg_data, 1))
+        err_msg_len = get_from_ogl(GLint, glGetProgramiv, out_ptr, GL_INFO_LOG_LENGTH)
+        final_err_msg = if err_msg_len < 2
+            string("Error linking shaders: INTERNAL ERROR no message available from OpenGL!")
+        else
+            err_msg_data = Vector{UInt8}(undef, err_msg_len)
+            actual_msg_size = let size_ptr = Ref(convert(GLsizei, err_msg_len))
+                glGetProgramInfoLog(out_ptr, err_msg_len, size_ptr, Ref(err_msg_data, 1))
+                size_ptr[]
+            end
+            err_msg = String(view(err_msg_data, 1:actual_msg_size))
+
+            string(
+                "Error linking shaders: ",
+                if actual_msg_size != err_msg_len-1
+                    tuple(
+                        "(INTERNAL ERROR expected msg to be $err_msg_len chars including null-terminator, ",
+                        "but OpenGL wrote $(actual_msg_size+1) instead)\n    "
+                    )
+                else
+                    tuple()
+                end...,
+                err_msg
+            )
+        end
 
         glDeleteProgram(out_ptr)
-        return string("Error linking shaders: ", String(msg_data[1:msg_len]))
+        return final_err_msg
     end
 
     # We need to "detach" the shader objects

@@ -1,6 +1,7 @@
 # v0.3.4
 
 * Tiny fixes that caused runtime problems
+* Finally nail down that issue with shader compile/linker error logging, missing the last char or having an extra last char
 
 # v0.3.3
 
