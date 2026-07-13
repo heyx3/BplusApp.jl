@@ -188,7 +188,7 @@ function get_buffer_data(b::Buffer,
 
     bytes = Vector{UInt8}(undef, n_bytes)
     get_buffer_data(b, bytes, buffer_first_byte)
-    
+
     elements = Vector{TOut{ByteVectorView}}(undef, n_elements)
     for i in 1:n_elements
         elements[i] = TOut{ByteVectorView}(@view bytes[(((i-1) * el_byte_size) + 1) : (i * el_byte_size)])
@@ -268,6 +268,7 @@ glsl_type_decl(::Type{UInt32}, struct_lookup::Dict{Type, String}) = "uint"
 glsl_type_decl(::Type{UInt64}, struct_lookup::Dict{Type, String}) = "uint64_t"
 glsl_type_decl(::Type{Float32}, struct_lookup::Dict{Type, String}) = "float"
 glsl_type_decl(::Type{Float64}, struct_lookup::Dict{Type, String}) = "double"
+glsl_type_decl(::Type{<:Enum{I}}, struct_lookup::Dict{Type, String}) where {I} = glsl_type_decl(I, struct_lookup)
 glsl_type_decl(::Type{Vec{N, Bool}}, struct_lookup::Dict{Type, String}) where {N} = "bvec$N"
 glsl_type_decl(::Type{Vec{N, Int32}}, struct_lookup::Dict{Type, String}) where {N} = "ivec$N"
 glsl_type_decl(::Type{Vec{N, UInt32}}, struct_lookup::Dict{Type, String}) where {N} = "uvec$N"
@@ -572,6 +573,7 @@ block_field_alignment(T::Type{<:AbstractOglBlock}, mode::Type{<:AbstractOglBlock
 # However bools are 4 bytes.
 block_field_alignment(T::Type{<:ScalarBits}                , mode::Type{<:AbstractOglBlock}) = sizeof(T)
 block_field_alignment( ::Type{Bool}                        , mode::Type{<:AbstractOglBlock}) = sizeof(UInt32)
+block_field_alignment( ::Type{<:Enum{I}}                   , mode::Type{<:AbstractOglBlock}) where {I} = block_field_alignment(I, mode)
 block_field_alignment( ::Type{Vec{N, T}}                   , mode::Type{<:AbstractOglBlock}) where {N, T} =
     if N == 3
         block_field_alignment(Vec{4, T}, mode)
@@ -632,9 +634,11 @@ You can also nest `@std140` structs within each other and they will be laid out 
 
 Sample usage:
 ````
+@enum(En::UInt32, a, b)
 @std140 struct MyInnerUniformBlock
     f::Float32
     bools::vb4
+    en::En # Translates to 'uint' in shader because it's UInt32
     position_array::StaticBlockArray{12, v3f}
 end
 
@@ -769,6 +773,8 @@ function block_struct_impl(struct_expr, mode::Type{<:AbstractOglBlock}, invoking
             if !(T <: base_type)
                 error("Non-", mode_description, " struct referenced by ", field_name, ": ", T)
             end
+        elseif T <: Enum
+            check_field_errors(field_name, Base.Enums.basetype(T), is_within_array)
         elseif T <: SCALAR_TYPE
             # Nothing to check
         else

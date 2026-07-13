@@ -1,11 +1,13 @@
 # BplusApp.GL.BUFFER_LAYOUT_MACRO_DEBUG_STREAM = stdout
 
+@bp_enum(E140::Int32, a, b, c=20)
+
 @std140 struct A
     f::Float32 # 1-4
     b::Bool # 5-8
     # Pad 9-16
     vf::v3f # 17 - 28
-    i::Int32 # 29 - 32
+    en::E_E140 # 29 - 32
     vi::v2i # 33 - 40
     # Pad 41-48
     bs::StaticBlockArray{25, Bool} # 49 - 448
@@ -20,7 +22,7 @@ function pretty_print(io::IO, a::A; indentation="")
         println(io, indentation, "\tf  = ", a.f)
         println(io, indentation, "\tb  = ", a.b)
         println(io, indentation, "\tvf = ", a.vf)
-        println(io, indentation, "\ti  = ", a.i)
+        println(io, indentation, "\ten  = ", a.en)
         println(io, indentation, "\tvi = ", a.vi)
         println(io, indentation, "\tbs = ...")
         println(io, indentation, "\tm = ", a.m)
@@ -42,14 +44,14 @@ end
 check_A_field(:f, Float32, 1)
 check_A_field(:b, Bool, 5)
 check_A_field(:vf, v3f, 17)
-check_A_field(:i, Int32, 29)
+check_A_field(:en, E_E140, 29)
 check_A_field(:vi, v2i, 33)
 check_A_field(:bs, StaticBlockArray{25, Bool, BplusApp.GL.OglBlock_std140}, 49)
 check_A_field(:m, @Mat(3, 2, Float64), 449)
-@bp_test_no_allocations(propertynames(A), (:f, :b, :vf, :i, :vi, :bs, :m))
-@bp_test_no_allocations(block_property_types(A), (Float32, Bool, v3f, Int32, v2i, StaticBlockArray{25, Bool}, @Mat(3, 2, Float64)))
+@bp_test_no_allocations(propertynames(A), (:f, :b, :vf, :en, :vi, :bs, :m))
+@bp_test_no_allocations(block_property_types(A), (Float32, Bool, v3f, E_E140, v2i, StaticBlockArray{25, Bool}, @Mat(3, 2, Float64)))
 const A1_ARRAY = [(i%3)==0 for i in 1:25]
-a1_args() = (@f32(1.4), true, v3f(4.4, 5.5, 6.6), 4, v2i(-3, -200),
+a1_args() = (@f32(1.4), true, v3f(4.4, 5.5, 6.6), E140.b, v2i(-3, -200),
              A1_ARRAY,
              @Mat(3, 2, Float64)(1, 2, 3, 4, 5, 6))
 make_a_1() = A(a1_args()...)
@@ -133,7 +135,7 @@ const TEST_C_ARGS = (
         i*0.5f0,
         (i%5)==0,
         v3f(i/2.0f0, i*30.0f0, -i),
-        -i*10,
+        E140.c,
         v2i(i, i+1),
         [((j*i)%4)==0 for j in 1:25],
         dmat3x2(i-1, i-2, i-3, i-4, i-5, i-6)
@@ -144,7 +146,7 @@ const TEST_C_ARGS = (
         23.231f0,
         false,
         v3f(10, 22, 13),
-        111111,
+        E140.a,
         v2u(899, 888),
         [((i%10) == 1) for i in 1:25],
         dmat3x2(
