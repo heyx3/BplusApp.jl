@@ -44,7 +44,7 @@ function gui_text!(t::GuiText)::Bool
             elseif data.EventFlag == CImGui.ImGuiInputTextFlags_CallbackCompletion
                 # Editing completed!
             else
-                println("Other event: ", data.EventFlag)
+                # println("Other event: ", data.EventFlag)
             end
             return Cint(0) # Does anybody know if this value has any meaning?
         end

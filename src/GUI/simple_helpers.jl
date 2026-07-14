@@ -480,21 +480,36 @@ get_gui_drawing_canvas(c::E_GuiDrawingCanvas)::Ptr{CImGui.ImDrawList} =
 const GuiDrawingDestination = Union{E_GuiDrawingCanvas, Ptr{CImGui.ImDrawList}}
 get_gui_drawing_canvas(ptr::Ptr{CImGui.ImDrawList}) = ptr
 
-struct GuiDrawBorder
+
+"Draws the shape's border and leaves the inside empty"
+struct GuiDrawColorBorder
     border::GuiColor
+    thickness::Float64
+    GuiDrawColorBorder(border, thickness = 1.0) = new(border, thickness)
 end
-struct GuiDrawFilled
+
+"Draws the shape's insides with a solid color"
+struct GuiDrawColorFilled
     fill::GuiColor
 end
-const GuiDrawSimpleColorType = Union{GuiDrawBorder, GuiDrawFilled}
 
-struct GuiDrawMultiColor
+"Draws a texture into the shape"
+struct GuiDrawColorTexture
+    tex::Union{Texture, View, CImGui.ImTextureID}
+    tint::GuiColor
+    uv_coords::Box2Df
+    GuiDrawColorTexture(tex, tint::GuiColor, uv_coords::Box2Df = Box(min=zero(v2f), max=one(v2f))) = new(tex, tint,            uv_coords)
+    GuiDrawColorTexture(tex,                 uv_coords::Box2Df = Box(min=zero(v2f), max=one(v2f))) = new(tex, v4f(1, 1, 1, 1), uv_coords)
+end
+
+"Draws the shape filled in with a gradient, one color at each corner of the shape"
+struct GuiDrawColorMulti
     top_left::GuiColor
     top_right::GuiColor
+    # Note: in Dear ImGUI calls, these last two fields are swapped
     bottom_left::GuiColor
     bottom_right::GuiColor
 end
-const GuiDrawColorType = Union{GuiDrawSimpleColorType, GuiDrawMultiColor}
 
 
 "
@@ -539,9 +554,9 @@ end
 
 function gui_draw_line(coords::GuiDrawCoords{NTuple{2, v2f}},
                        color::GuiColor,
-                       canvas::GuiDrawingDestination = GuiDrawingCanvas.current_window
+                       thickness::Float64 = 1.0
                        ;
-                       thickness::Float64 = 1.0)
+                       canvas::GuiDrawingDestination = GuiDrawingCanvas.current_window)
     draw_list = get_gui_drawing_canvas(canvas)
 
     # Get absolute draw coordinates.
@@ -566,15 +581,19 @@ function gui_draw_line(coords::GuiDrawCoords{NTuple{2, v2f}},
         )...)
     end
 end
+"If not using MultiColor coloring, you can selectively round off the corners using the extra arguments"
 function gui_draw_rect(coords::GuiDrawCoords{Box2Df},
-                       color::GuiDrawColorType
+                       color::Union{GuiDrawColorBorder, GuiDrawColorFilled, GuiDrawColorTexture, GuiDrawColorMulti}
                        ;
                        canvas::GuiDrawingDestination = GuiDrawingCanvas.current_window,
-                       # Border Thickness is only used if drawing with `GuiDrawBorder`.
-                       border_thickness::Float64 = 1.0,
                        # Corner rounding is not used with MultiColor.
                        corner_roundedness::Float64 = 0.0,
+                       # Corner rounding is not used with texture drawing.
                        corners_to_round::CImGui.LibCImGui.ImDrawFlags_ = CImGui.LibCImGui.ImDrawFlags_RoundCornersAll)
+    if !iszero(corner_roundedness) || (corners_to_round != CImGui.LibCImGui.ImDrawFlags_RoundCornersAll)
+        error("Trying to use rounded corners with Multi-Color! Not allowed")
+    end
+
     draw_list = get_gui_drawing_canvas(canvas)
 
     # Get absolute draw coordinates.
@@ -592,15 +611,25 @@ function gui_draw_rect(coords::GuiDrawCoords{Box2Df},
     g_rect_corners = convert.(Ref(gVec2), rect_corners)
 
     # Get the color/fill type, and dispatch.
-    if color isa GuiDrawBorder
+    if color isa GuiDrawColorBorder
         CImGui.AddRect(draw_list, g_rect_corners..., gui_color_to_im_color(color.border),
-                       corner_roundedness, corners_to_round, border_thickness)
-    elseif color isa GuiDrawFilled
+                       corner_roundedness, corners_to_round, color.thickness)
+    elseif color isa GuiDrawColorFilled
         CImGui.AddRectFilled(draw_list, g_rect_corners..., gui_color_to_im_color(color.fill),
                              corner_roundedness, corners_to_round)
-    elseif color isa GuiDrawMultiColor
+    elseif color isa GuiDrawColorMulti
         CImGui.AddRectFilledMultiColor(draw_list, g_rect_corners...,
-                                       gui_color_to_im_color.((color.top_left, color.top_right, color.bottom_left, color.bottom_right)))
+                                       gui_color_to_im_color.((color.top_left, color.top_right, color.bottom_right, color.bottom_left)))
+    elseif color isa GuiDrawColorTexture
+        tex::CImGui.ImTextureID = if color.tex isa CImGui.ImTextureID
+            color.tex
+        else
+            gui_tex_handle(color.tex)
+        end
+        CImGui.AddImageRounded(draw_list, tex, g_rect_corners...,
+                               min_inclusive(color.uv_coords), max_inclusive(color.uv_coords),
+                               gui_color_to_im_color(color.tint),
+                               corner_roundedness, corners_to_round)
     else
         error("Unhandled: ", typeof(color))
     end
@@ -612,13 +641,14 @@ function gui_draw_rect(coords::GuiDrawCoords{Box2Df},
         )...)
     end
 end
-"Draws an arbitrary 4-sided shape"
+"Draws an arbitrary 4-sided shape, with the coords in winding order (top-left, top-right, bottom-right, bottom-left)"
 function gui_draw_quad(coords::GuiDrawCoords{NTuple{4, v2f}},
-                       color::GuiDrawSimpleColorType
+                       color::Union{GuiDrawColorBorder, GuiDrawColorFilled, GuiDrawColorTexture}
                        ;
                        canvas::GuiDrawingDestination = GuiDrawingCanvas.current_window,
-                       # Border Thickness is only used if drawing with `GuiDrawBorder`.
-                       border_thickness::Float64 = 1.0)
+                       # If drawing a texture and the boxed UV coords aren't precise enough,
+                       #   provide the four UV corners here.
+                       uv_coords::Optional{NTuple{4, v2f}} = nothing)
     draw_list = get_gui_drawing_canvas(canvas)
 
     # Get absolute draw coordinates.
@@ -635,12 +665,29 @@ function gui_draw_quad(coords::GuiDrawCoords{NTuple{4, v2f}},
     g_corners = convert.(Ref(gVec2), corners)
 
     # Get the color/fill type, and dispatch.
-    if color isa GuiDrawBorder
+    if color isa GuiDrawColorBorder
         CImGui.AddQuad(draw_list, g_corners..., gui_color_to_im_color(color.border),
-                       corner_roundedness, corners_to_round, border_thickness)
-    elseif color isa GuiDrawFilled
+                       corner_roundedness, corners_to_round, color.thickness)
+    elseif color isa GuiDrawColorFilled
         CImGui.AddQuadFilled(draw_list, g_corners..., gui_color_to_im_color(color.fill),
                              corner_roundedness, corners_to_round)
+    elseif color isa GuiDrawTexture
+        tex::CImGui.ImTextureID = if color.tex isa CImGui.ImTextureID
+            color.tex
+        else
+            gui_tex_handle(color.tex)
+        end
+        g_uv_corners = if exists(uv_coords)
+            uv_coords
+        else
+            let a = min_inclusive(color.uv_coords),
+                b = max_inclusive(color.uv_coords)
+              (a, v2f(b.x, a.y), b, v2f(a.x, b.y))
+            end
+        end
+        CImGui.AddImageQuad(draw_list, tex,
+                            g_corners..., g_uv_corners...,
+                            gui_color_to_im_color(color.tint))
     else
         error("Unhandled: ", typeof(color))
     end
@@ -657,5 +704,5 @@ end
 export gui_draw_line, gui_draw_rect, gui_draw_quad,
        gui_get_draw_clip_area,
        GuiDrawingCanvas, E_GuiDrawingCanvas,
-       GuiDrawBorder, GuiDrawFilled, GuiDrawMultiColor,
+       GuiDrawColorBorder, GuiDrawColorFilled, GuiDrawColorTexture, GuiDrawColorMulti,
        GuiDrawCursorRelative

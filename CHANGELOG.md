@@ -1,6 +1,7 @@
-# v0.3.4
+# v0.4.0
 
 * Add enum support to `@std140` and `@std430`
+* Refactor the GUI drawing helpers
 * Finally nail down that issue with shader compile/linker error logging, missing the last char or having an extra last char
 * Tiny fixes that caused runtime problems
 
