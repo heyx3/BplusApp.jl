@@ -1,3 +1,7 @@
+# v0.4.1
+
+* Applying improvements from `BplusCore`
+
 # v0.4.0
 
 * Add enum support to `@std140` and `@std430`

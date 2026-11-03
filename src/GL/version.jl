@@ -1,13 +1,16 @@
 const OGL_MAJOR_VERSION = 4
 const OGL_MINOR_VERSION = 6
 
-# "Different ways an OpenGL extension can be supported"
+"
+Different ways an OpenGL extension can be supported:
+
+* `require`: The extension must exist, or there will be an error
+* `prefer`: The extension should be added, otherwise there will be a warning
+* `enable`: The extension should be added if available
+"
 @bp_enum(ExtensionMode,
-    # The extension must exist, or there will be an error
     require,
-    # The extension should be added, otherwise there will be a warning
     prefer,
-    # The extension should be added if available
     enable
 )
 

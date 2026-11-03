@@ -20,7 +20,12 @@ Shaders provide unlimited flexibility to combine two textures into a new one,
 =#
 
 
-# The multipliers that can be used on 'src' and 'dest' colors.
+"
+The multipliers that can be used on 'src' and 'dest' colors.
+
+The `constant_[x]` factors are NOT multipliers on the src/dest value.
+Instead, they replace the src/dest with a constant.
+"
 @bp_gl_enum(BlendFactors::GLenum,
     zero = GL_ZERO,
     one = GL_ONE,
@@ -37,8 +42,6 @@ Shaders provide unlimited flexibility to combine two textures into a new one,
     inverse_dest_color = GL_ONE_MINUS_DST_COLOR,
     inverse_dest_alpha = GL_ONE_MINUS_DST_ALPHA,
 
-    # The below factors are NOT multipliers on the src/dest value.
-    # Instead, they replace the src/dest with a constant.
     constant_color = GL_CONSTANT_COLOR,
     constant_alpha = GL_CONSTANT_ALPHA,
     inverse_constant_color = GL_ONE_MINUS_CONSTANT_COLOR,
@@ -59,8 +62,10 @@ blend_factor_uses_constant(f::E_BlendFactors)::Bool = (
 export blend_factor_uses_constant
 
 
-# The operators that can combine source and destination colors
-#   (after each is multiplied by their blend factor).
+"
+The operators that can combine source and destination colors
+  (after each is multiplied by their blend factor).
+"
 @bp_gl_enum(BlendOps::GLenum,
     add = GL_FUNC_ADD,
 

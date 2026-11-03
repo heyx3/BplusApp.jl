@@ -28,6 +28,14 @@ end
 export gl_flush_texture_writes_in_place
 
 
+"
+Aggregate values:
+
+* `USE_FRAGMENT_SHADERS`: All data reads/writes that are possible in fragment shaders
+* `USE_MESH`: All data reads/writes related to Vertex Array Objects
+* `USE_BUFFER`: All data reads/writes related to Buffers
+* `USE_TEXTURES`: All data reads/writes related to Textures
+"
 @bp_gl_bitfield(MemoryActions::GLbitfield,
     mesh_vertex_data = GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT,
     mesh_index_data = GL_ELEMENT_ARRAY_BARRIER_BIT,
@@ -51,15 +59,11 @@ export gl_flush_texture_writes_in_place
     # This bit generates an OpenGL error if used. Already logged as a B+ ticket.
     # queries = GL_QUERY_BUFFER_BARRIER_BIT,
 
-    # All data reads/writes that are possible in fragment shaders:
     @USE_FRAGMENT_SHADERS(texture_samples | texture_simple_views | target_attachments |
                           buffer_uniforms | buffer_storage | buffer_atomics),
-    # All data reads/writes related to Vertex Array Objects:
     @USE_MESH(mesh_vertex_data | mesh_index_data),
-    # All data reads/writes related to Buffers:
     @USE_BUFFER(USE_MESH | buffer_atomics | buffer_uniforms | buffer_storage |
                 buffer_download_or_upload | buffer_map_usage),
-    # All data reads/writes related to Textures:
     @USE_TEXTURES(texture_samples | texture_simple_views | texture_upload_or_download |
                   texture_async_download_or_upload)
 )

@@ -461,7 +461,7 @@ export gui_next_window_space
 ##############################
 ##    GUI drawing helpers
 
-# Standard locations where primitives can be drawn with Dear ImGUI.
+"Standard locations where primitives can be drawn with Dear ImGUI."
 @bp_enum(GuiDrawingCanvas,
     current_window,
     background, foreground

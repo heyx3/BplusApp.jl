@@ -5,7 +5,7 @@
 #       Upload/download channels      #
 #######################################
 
-# Subsets of color channels that can be uploaded to a texture.
+"Subsets of color channels that can be uploaded to a texture."
 @bp_gl_enum(PixelIOChannels::GLenum,
     red = GL_RED,
     green = GL_GREEN,
@@ -118,8 +118,10 @@ export PixelIOChannels, E_PixelIOChannels
 #       Upload/download data types      #
 #########################################
 
-# Data types that pixel data can be uploaded/downloaded as.
-# This does not always have to match the texture's format or sampler.
+"
+Data types that pixel data can be uploaded/downloaded as.
+This does not always have to match the texture's format or sampler.
+"
 @bp_gl_enum(PixelIOTypes::GLenum,
     uint8 = GL_UNSIGNED_BYTE,
     uint16 = GL_UNSIGNED_SHORT,
@@ -259,15 +261,18 @@ export TexSubset
 #       Swizzling      #
 ########################
 
-# Various sources a color texture can pull from during sampling.
-# Note that swizzling is set per-texture, not per-sampler.
+"
+Various sources a color texture can pull from during sampling.
+Note that swizzling is set per-texture, not per-sampler.
+
+The `zero` and `one` sources output a constant value instead of reading from the texture.
+"
 @bp_gl_enum(SwizzleSources::GLenum,
     red = GL_RED,
     green = GL_GREEN,
     blue = GL_BLUE,
     alpha = GL_ALPHA,
 
-    # The below sources output a constant value instead of reading from the texture.
     zero = GL_ZERO,
     one = GL_ONE
 )
@@ -298,7 +303,7 @@ get_n_mips(length::Integer) = get_n_mips(Vec(length))
     return size
 end
 
-# When using this texture through a Simple View, these are the modes it is available in.
+"When using this texture through a Simple View, these are the modes it is available in."
 @bp_gl_enum(ImageAccessModes::GLenum,
     read = GL_READ_ONLY,
     write = GL_WRITE_ONLY,

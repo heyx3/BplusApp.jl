@@ -52,10 +52,12 @@ export ButtonModes, E_ButtonModes, ButtonInput
 
 ##  Axes  ##
 
+"
+* `value`: The raw value.
+* `delta`: The difference between the value this frame and its value last frame.
+"
 @bp_enum(AxisModes,
-    # The raw value.
     value,
-    # The difference between the value this frame and its value last frame.
     delta
 )
 struct AxisInput

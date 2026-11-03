@@ -65,30 +65,33 @@ export VertexAttribute
 #       Other Data      #
 #########################
 
-# The different kinds of shapes that mesh vertices can represent.
+"
+The different kinds of shapes that mesh vertices can represent:
+
+* `point`: Each vertex is a screen-space square.
+* `line`: Each pair of vertices is a line.
+  If the number of vertices is odd, the last one is ignored.
+* `triangle`: Each triplet of vertices is a triangle.
+  If the number of vertices is not a multiple of three, the last one/two are ignored.
+* `line_strip_open`: Each vertex creates a line reaching backwards to the previous vertex.
+  If there's only one vertex, no lines are created.
+* `line_strip_closed`: Each vertex creates a line reaching backwards to the previous vertex.
+  The last vertex also reaches out to the first, creating a closed loop.
+  If there's only one vertex, no lines are created.
+* `triangle_strip`: Each new vertex creates a triangle with the two previous vertices.
+  If there's only one or two vertices, no triangles are created.
+* `triangle_fan`: Each new vertex creates a triangle with its previous vertex plus the first vertex.
+  If there's only one or two vertices, no triangles are created.
+"
 @bp_gl_enum(PrimitiveTypes::GLenum,
-    # Each vertex is a screen-space square.
     point = GL_POINTS,
-    # Each pair of vertices is a line.
-    # If the number of vertices is odd, the last one is ignored.
     line = GL_LINES,
-    # Each triplet of vertices is a triangle.
-    # If the number of vertices is not a multiple of three, the last one/two are ignored.
     triangle = GL_TRIANGLES,
 
-    # Each vertex creates a line reaching backwards to the previous vertex.
-    # If there's only one vertex, no lines are created.
     line_strip_open = GL_LINE_STRIP,
-    # Each vertex creates a line reaching backwards to the previous vertex.
-    # The last vertex also reaches out to the first, creating a closed loop.
-    # If there's only one vertex, no lines are created.
     line_strip_closed = GL_LINE_LOOP,
 
-    # Each new vertex creates a triangle with the two previous vertices.
-    # If there's only one or two vertices, no triangles are created.
     triangle_strip = GL_TRIANGLE_STRIP,
-    # Each new vertex creates a triangle with its previous vertex plus the first vertex.
-    # If there's only one or two vertices, no triangles are created.
     triangle_fan = GL_TRIANGLE_FAN
 );
 

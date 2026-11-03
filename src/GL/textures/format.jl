@@ -2,15 +2,17 @@
 #       Enums      #
 ####################
 
-# The types of textures that can be created.
+"
+The types of textures that can be created.
+
+Array textures are not supported, because they aren't necessary
+  now that we have bindless textures.
+"
 @bp_gl_enum(TexTypes::GLenum,
     oneD = GL_TEXTURE_1D,
     twoD = GL_TEXTURE_2D,
     threeD = GL_TEXTURE_3D,
     cube_map = GL_TEXTURE_CUBE_MAP
-
-    # Array textures are not supported, because they aren't necessary
-    #    now that we have bindless textures.
 )
 
 @bp_gl_enum(ColorChannels::UInt8,
@@ -27,18 +29,21 @@ const AllChannels = Union{E_ColorChannels, E_OtherChannels}
 
 
 
-# The type of data representing each channel of a texture's pixels.
+"""
+The type of data representing each channel of a texture's pixels:
+
+* `float`: A floating-point number (allowing "HDR" values outside the traditional 0-1 range)
+* `normalized_uint`: A value between 0 - 1, stored as an unsigned integer between 0 and its maximum value.
+* `normalized_int`: A value between -1 and +1, stored as a signed integer between its minimum and maximum value.
+* `uint`: An unsigned integer. Sampling from this texture yields integers, not floats.
+* `int`: A signed integer. Sampling from this texture yields integers, not floats.
+"""
 @bp_gl_enum(FormatTypes::UInt8,
-    # A floating-point number (allowing "HDR" values outside the traditional 0-1 range)
     float,
-    # A value between 0 - 1, stored as an unsigned integer between 0 and its maximum value.
     normalized_uint,
-    # A value between -1 and +1, stored as a signed integer between its minimum and maximum value.
     normalized_int,
 
-    # An unsigned integer. Sampling from this texture yields integers, not floats.
     uint,
-    # A signed integer. Sampling from this texture yields integers, not floats.
     int
 )
 
@@ -132,7 +137,7 @@ get_byte_size(format, size::VecI) = get_pixel_bit_size(format) * 8 * reduce(*, m
 #       SimpleFormat      #
 ###########################
 
-# The sets of components that can be used in "simple" texture formats.
+"""The sets of components that can be used in "simple" texture formats."""
 @bp_gl_enum(SimpleFormatComponents::UInt8,
     R = 1,
     RG = 2,
@@ -140,9 +145,11 @@ get_byte_size(format, size::VecI) = get_pixel_bit_size(format) * 8 * reduce(*, m
     RGBA = 4
 )
 
-# The bit-depths that components can have in "simple" texture formats.
-# Note that not all combinations of bit depth and components are legal
-#   (for example, 2-bit components are only allowed if you use all four channels, RGBA).
+"""
+The bit-depths that components can have in "simple" texture formats.
+Note that not all combinations of bit depth and components are legal
+  (for example, 2-bit components are only allowed if you use all four channels, RGBA).
+"""
 @bp_gl_enum(SimpleFormatBitDepths::UInt8,
     B2 = 2,
     B4 = 4,
@@ -271,50 +278,45 @@ end
 #      SpecialFormat      #
 ###########################
 
-# Special one-off texture formats.
+"
+Special one-off texture formats:
+
+* `r5_g6_b5`: normalized_uint texture packing each pixel into 2 bytes:
+  5 bits for Red, 6 for Green, and 5 for Blue (no alpha).
+* `rgb10_a2`: normalized_uint texture packing each pixel into 4 bytes:
+  10 bits each for Red, Green, and Blue, and 2 bits for Alpha.
+* `rgb10_a2_uint`: UInt texture (meaning it outputs integer values, not floats!)
+  that packs each pixel into 4 bytes:
+  10 bits each for Red, Green, and Blue, and 2 bits for Alpha.
+* `rgb_tiny_ufloats`: Floating-point texture using special unsigned 11-bit floats for Red and Green,
+  and unsigned 10-bit float for Blue. No Alpha.
+  Floats of this size can represent values from .0000610 to 65500,
+  with ~2 digits of precision.
+* `rgb_shared_exp_ufloats`: Floating-point texture using unsigned 14-bit floats for RGB (no alpha), with a catch:
+  They share the same 5-bit exponent, to fit into 32 bits per pixel.
+* `sRGB`: Each pixel is a 24-bit sRGB colorspace image (no alpha).
+  Each channel is 8 bits, and the texture data is treated as non-linear,
+  which means it's converted into linear values on the fly when sampled.
+* `sRGB_linear_alpha`: Same as sRGB, but with the addition of a linear (meaning non-sRGB) 8-bit Alpha value.
+* `r3_g3_b2`: normalized_uint texture packing each pixel into a single byte:
+  3 bits for Red, 3 for Green, and 2 for Blue (no alpha).
+  Note that, from reading on the Internet,
+  it seems most hardware just converts to r5_g6_b5 under the hood.
+* `rgb5_a1`: normalized_uint texture packing each pixel into 2 bytes:
+  5 bits each for Red, Green, and Blue, and 1 bit for Alpha.
+  It is highly recommended to use a compressed format instead of this one.
+"
 @bp_gl_enum(SpecialFormats::GLenum,
-    # normalized_uint texture packing each pixel into 2 bytes:
-    #     5 bits for Red, 6 for Green, and 5 for Blue (no alpha).
     r5_g6_b5 = GL_RGB565,
-
-    # normalized_uint texture packing each pixel into 4 bytes:
-    #     10 bits each for Red, Green, and Blue, and 2 bits for Alpha.
     rgb10_a2 = GL_RGB10_A2,
-
-    # UInt texture (meaning it outputs integer values, not floats!)
-    #     that packs each pixel into 4 bytes:
-    #     10 bits each for Red, Green, and Blue, and 2 bits for Alpha.
     rgb10_a2_uint = GL_RGB10_A2UI,
-
-    # Floating-point texture using special unsigned 11-bit floats for Red and Green,
-    #     and unsigned 10-bit float for Blue. No Alpha.
-    # Floats of this size can represent values from .0000610 to 65500,
-    #     with ~2 digits of precision.
     rgb_tiny_ufloats = GL_R11F_G11F_B10F,
-
-    # Floating-point texture using unsigned 14-bit floats for RGB (no alpha), with a catch:
-    # They share the same 5-bit exponent, to fit into 32 bits per pixel.
     rgb_shared_exp_ufloats = GL_RGB9_E5,
 
-
-    # Each pixel is a 24-bit sRGB colorspace image (no alpha).
-    # Each channel is 8 bits, and the texture data is treated as non-linear,
-    #     which means it's converted into linear values on the fly when sampled.
     sRGB = GL_SRGB8,
-
-    # Same as sRGB, but with the addition of a linear (meaning non-sRGB) 8-bit Alpha value.
     sRGB_linear_alpha = GL_SRGB8_ALPHA8,
 
-
-    # normalized_uint texture packing each pixel into a single byte:
-    #     3 bits for Red, 3 for Green, and 2 for Blue (no alpha).
-    # Note that, from reading on the Internet,
-    #     it seems most hardware just converts to r5_g6_b5 under the hood.
     r3_g3_b2 = GL_R3_G3_B2,
-
-    # normalized_uint texture packing each pixel into 2 bytes:
-    #     5 bits each for Red, Green, and Blue, and 1 bit for Alpha.
-    # It is highly recommended to use a compressed format instead of this one.
     rgb5_a1 = GL_RGB5_A1
 )
 
@@ -437,29 +439,32 @@ get_ogl_enum(f::E_SpecialFormats) = GLenum(f)
 #      CompressedFormat      #
 ##############################
 
-# All below formats are based on "block compression", where 4x4 blocks of pixels
-#     are intelligently compressed together.
+"""
+All below formats are based on "block compression", where 4x4 blocks of pixels
+    are intelligently compressed together.
+
+* `greyscale_normalized_uint`: BC4 compression, with one color channel and a value range from 0 - 1.
+* `greyscale_normalized_int`: BC4 compression, with one color channel and a value range from -1 to 1.
+* `rg_normalized_uint`: BC5 compression, with two color channels and values range from 0 - 1.
+* `rg_normalized_int`: BC5 compression, with two color channels and values range from -1 - 1.
+* `rgb_float`: BC6 compression, with RGB color channels and floating-point values.
+* `rgb_ufloat`: BC6 compression, with RGB color channels and *unsigned* floating-point values.
+* `rgba_normalized_uint`: BC7 compression, with RGBA channels and values range from 0 - 1.
+* `rgba_sRGB_normalized_uint`: BC7 compression, with RGBA channels and sRGB values ranging from 0 - 1.
+  "sRGB" meaning that the values get converted from sRGB space to linear space when sampled.
+"""
 @bp_gl_enum(CompressedFormats::GLenum,
-    # BC4 compression, with one color channel and a value range from 0 - 1.
     greyscale_normalized_uint = GL_COMPRESSED_RED_RGTC1,
-    # BC4 compression, with one color channel and a value range from -1 to 1.
     greyscale_normalized_int = GL_COMPRESSED_SIGNED_RED_RGTC1,
 
-    # BC5 compression, with two color channels and values range from 0 - 1.
     rg_normalized_uint = GL_COMPRESSED_RG_RGTC2,
-    # BC5 compression, with two color channels and values range from -1 - 1.
     rg_normalized_int = GL_COMPRESSED_SIGNED_RG_RGTC2,
 
-    # BC6 compression, with RGB color channels and floating-point values.
     rgb_float = GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT,
-    # BC6 compression, with RGB color channels and *unsigned* floating-point values.
     rgb_ufloat = GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT,
     # TODO: DXT1 for low-quality compression, with or without 1-bit alpha.
 
-    # BC7 compression, with RGBA channels and values range from 0 - 1.
     rgba_normalized_uint = GL_COMPRESSED_RGBA_BPTC_UNORM,
-    # BC7 compression, with RGBA channels and sRGB values ranging from 0 - 1.
-    # "sRGB" meaning that the values get converted from sRGB space to linear space when sampled.
     rgba_sRGB_normalized_uint = GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM
 );
 
@@ -579,27 +584,30 @@ get_ogl_enum(f::E_CompressedFormats) = GLenum(f)
 #      Depth/Stencil Formats      #
 ###################################
 
-# Formats for depth and/or stencil textures.
+"
+Formats for depth and/or stencil textures:
+
+* `depth_16u`: Depth texture with unsigned 16-bit data.
+* `depth_24u`: Depth texture with unsigned 24-bit data.
+* `depth_32u`: Depth texture with unsigned 32-bit data.
+* `depth_32f`: Depth texture with floating-point 32-bit data.
+* `stencil_8`: Stencil texture with unsigned 8-bit data.
+  Note that other sizes exist for stencil textures,
+  but the OpenGL wiki strongly advises against using them.
+* `depth24u_stencil8`: Hybrid Depth/Stencil texture with unsigned 24-bit depth
+  and unsigned 8-bit stencil.
+* `depth32f_stencil8`: Hybrid Depth/Stencil texture with floating-point 32-bit depth
+  and unsigned 8-bit stencil (and 24 bits of padding in between them).
+"
 @bp_gl_enum(DepthStencilFormats::GLenum,
-    # Depth texture with unsigned 16-bit data.
     depth_16u = GL_DEPTH_COMPONENT16,
-    # Depth texture with unsigned 24-bit data.
     depth_24u = GL_DEPTH_COMPONENT24,
-    # Depth texture with unsigned 32-bit data.
     depth_32u = GL_DEPTH_COMPONENT32,
-    # Depth texture with floating-point 32-bit data.
     depth_32f = GL_DEPTH_COMPONENT32F,
 
-    # Stencil texture with unsigned 8-bit data.
-    # Note that other sizes exist for stencil textures,
-    #     but the OpenGL wiki strongly advises against using them.
     stencil_8 = GL_STENCIL_INDEX8,
 
-    # Hybrid Depth/Stencil texture with unsigned 24-bit depth
-    #     and unsigned 8-bit stencil.
     depth24u_stencil8 = GL_DEPTH24_STENCIL8,
-    # Hybrid Depth/Stencil texture with floating-point 32-bit depth
-    #     and unsigned 8-bit stencil (and 24 bits of padding in between them).
     depth32f_stencil8 = GL_DEPTH32F_STENCIL8
 );
 

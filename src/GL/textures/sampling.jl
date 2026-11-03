@@ -3,26 +3,32 @@
 #       Filtering      #
 ########################
 
-# The behavior of a texture when you sample past its boundaries.
+"
+The behavior of a texture when you sample past its boundaries:
+
+* `repeat`: Repeat the texture indefinitely, creating a tiling effect.
+* `mirrored_repeat`: Repeat the texture indefinitely, but mirror it across each edge.
+* `clamp`: Clamp the coordinates so that the texture outputs its last edge pixels
+  when going past its border.
+* `custom_border`: Outputs a custom color when outside the texture.
+"
 @bp_gl_enum(WrapModes::GLenum,
-    # Repeat the texture indefinitely, creating a tiling effect.
     repeat = GL_REPEAT,
-    # Repeat the texture indefinitely, but mirror it across each edge.
     mirrored_repeat = GL_MIRRORED_REPEAT,
-    # Clamp the coordinates so that the texture outputs its last edge pixels
-    #    when going past its border.
     clamp = GL_CLAMP_TO_EDGE,
-    # Outputs a custom color when outside the texture.
     custom_border = GL_CLAMP_TO_BORDER
 )
 export WrapModes, E_WrapModes
 
 
-# The filtering mode for a texture's pixels.
+"""
+The filtering mode for a texture's pixels:
+
+* `rough`: "Nearest" sampling. Individual pixels are crisp and square.
+* `smooth`: "Linear" sampling. Blends the nearest neighbor pixels together.
+"""
 @bp_gl_enum(PixelFilters::GLenum,
-    # "Nearest" sampling. Individual pixels are crisp and square.
     rough = GL_NEAREST,
-    # "Linear" sampling. Blends the nearest neighbor pixels together.
     smooth = GL_LINEAR
 )
 export PixelFilters, E_PixelFilters
@@ -269,11 +275,14 @@ export TexSampler, get_wrapping, apply,
 #   Depth/Stencil Sampling   #
 ##############################
 
-# Textures containing hybrid depth/stencil data can be sampled in a few ways.
+"
+Textures containing hybrid depth/stencil data can be sampled in a few ways:
+
+* `depth`: The depth component is sampled, acting like a Red-only float/normalized int texture.
+* `stencil`: The stencil component is sampled, acting like a Red-only uint texture.
+"
 @bp_gl_enum(DepthStencilSources::GLenum,
-    # The depth component is sampled, acting like a Red-only float/normalized int texture.
     depth = GL_DEPTH_COMPONENT,
-    # The stencil component is sampled, acting like a Red-only uint texture.
     stencil = GL_STENCIL_INDEX
 )
 export DepthStencilSources, E_DepthStencilSources
