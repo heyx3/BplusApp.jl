@@ -1,6 +1,7 @@
 # v0.4.1
 
-* Applying improvements from `BplusCore`
+* Apply improvements from `BplusCore`
+* Add `white_pixel` to basic-graphics service
 
 # v0.4.0
 

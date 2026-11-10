@@ -36,12 +36,14 @@ A Context service which defines a bunch of useful GL resources:
             Refer to `simple_blit()`.
  * `empty_mesh` : A mesh with no vertex data, for dispatching entirely procedural geometry.
                   Has the 'points' PrimitiveType.
+ * `white_pixel` : An RGBA texture with one pixel, set to (1, 1, 1, 1).
 "
 @bp_service BasicGraphics(force_unique) begin
     screen_triangle::Mesh
     screen_quad::Mesh
     blit::Program
     empty_mesh::Mesh
+    white_pixel::Texture
 
     # The master list of things this service owns and needs to clean up.
     references::Set{AbstractResource}
@@ -94,13 +96,26 @@ A Context service which defines a bunch of useful GL resources:
                              GL.VertexDataSource[ ],
                              GL.VertexAttribute[ ])
 
+        white_pixel = Texture(
+            SimpleFormat(
+                FormatTypes.normalized_uint,
+                SimpleFormatComponents.RGBA,
+                SimpleFormatBitDepths.B2
+            ),
+            [ vRGBAu8(255, 255, 255, 255) ;; ],
+            sampler = TexSampler{2}(
+                pixel_filter = PixelFilters.rough
+            )
+        )
+
         return new(
-            screen_tri, screen_quad, blit, empty_mesh,
+            screen_tri, screen_quad, blit, empty_mesh, white_pixel,
             Set(AbstractResource[
                 screen_tri_poses, screen_tri,
                 quad_poses, screen_quad,
                 blit,
-                empty_mesh
+                empty_mesh,
+                white_pixel
             ])
         )
     end
